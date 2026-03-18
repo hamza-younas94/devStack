@@ -1,37 +1,243 @@
-# DevStack
+<p align="center">
+  <img src="src-tauri/icons/128x128@2x.png" width="128" height="128" alt="DevStack Logo">
+</p>
 
-A native desktop application for managing your local development environment on macOS. Built with [Tauri v2](https://v2.tauri.app/), React, and Rust.
+<h1 align="center">DevStack</h1>
 
-Think of it as an open-source alternative to ServBay — manage nginx, PHP, databases, DNS, SSL, tunnels, and more from a single app.
+<p align="center">
+  <strong>Your local development environment, managed.</strong><br>
+  A native macOS desktop app for managing nginx, PHP, databases, DNS, SSL, tunnels, and more — all from one place.
+</p>
 
-![DevStack](src-tauri/icons/128x128.png)
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-macOS-blue?style=flat-square" alt="macOS">
+  <img src="https://img.shields.io/badge/built_with-Tauri_v2-orange?style=flat-square" alt="Tauri v2">
+  <img src="https://img.shields.io/badge/frontend-React_19-61dafb?style=flat-square" alt="React">
+  <img src="https://img.shields.io/badge/backend-Rust-brown?style=flat-square" alt="Rust">
+  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT">
+</p>
+
+---
+
+## Screenshots
+
+### Dashboard
+Monitor all services, system resources, and websites at a glance.
+
+![Dashboard](screenshots/dashboard.png)
+
+<!-- Add more screenshots as you capture them:
+### Websites
+![Websites](screenshots/websites.png)
+
+### Databases
+![Databases](screenshots/databases.png)
+
+### Tunnel
+![Tunnel](screenshots/tunnel.png)
+
+### Settings (Light Theme)
+![Light Theme](screenshots/settings-light.png)
+-->
+
+---
 
 ## Features
 
-| Feature | Description |
-|---------|-------------|
-| **Dashboard** | Real-time overview of all services, system stats (CPU, memory, disk) |
-| **Websites** | Create and manage local sites (PHP, Node.js, Python, Static, WordPress) |
-| **Web Server** | Nginx config editing, log tailing, rewrite rule templates |
-| **Databases** | MySQL & PostgreSQL — create, drop, import, export databases |
-| **Languages** | Manage PHP (multi-version), Node.js, Python, Go, Ruby, Java |
-| **DNS** | Local DNS via dnsmasq, custom TLDs (`.test`, `.local`), `/etc/hosts` editor |
-| **SSL** | Auto-generate trusted local certificates via mkcert |
-| **Tunnels** | Expose local sites via Cloudflare Tunnel or ngrok (click to install) |
-| **AI** | Ollama integration — pull, manage, and run LLM models locally |
-| **Mail** | Local mail server via Mailpit |
-| **Search** | Meilisearch management |
-| **Object Storage** | MinIO (S3-compatible) management |
-| **Packages** | Install, upgrade, and manage Homebrew packages |
-| **Backup** | Backup and restore sites and databases |
-| **Settings** | Dark/light theme, launch preferences, custom domain suffixes |
+### Services & Infrastructure
+
+<table>
+<tr>
+<td width="50%">
+
+#### Dashboard
+- Live CPU, memory, disk, and network stats
+- All services at a glance with version + PID
+- Quick Start All / Stop All controls
+- Session uptime counter
+- Website list with quick actions (open, terminal, editor)
+
+</td>
+<td width="50%">
+
+#### Websites
+- Create sites in one click: PHP, Node.js, Python, Static, WordPress
+- Auto-generates nginx config, SSL cert, and DNS entry
+- Custom document root, PHP version per site
+- Access/error log viewer per site
+- Open in browser, terminal, or code editor
+
+</td>
+</tr>
+<tr>
+<td>
+
+#### Web Server (nginx)
+- Start, stop, restart, reload nginx
+- Edit nginx config directly in-app
+- Auto-tail access and error logs
+- Rewrite rule templates (WordPress, Laravel, etc.)
+
+</td>
+<td>
+
+#### Databases
+- **MySQL** and **PostgreSQL** support
+- Create, drop, import (`.sql`), and export databases
+- Edit `my.cnf` / `postgresql.conf` in-app
+- View connection details (host, port, socket)
+
+</td>
+</tr>
+<tr>
+<td>
+
+#### Languages & Runtimes
+- **PHP** — Multiple versions, one-click switching
+- **Node.js** — Version management
+- **Python** — Version management
+- **Go, Ruby, Java** — Install and manage
+- Active version shown per runtime
+
+</td>
+<td>
+
+#### DNS
+- Local DNS via **dnsmasq** (`.test` domains)
+- Click-to-install if not present
+- `/etc/hosts` editor — add, remove, edit entries
+- Custom TLD support
+- One-click DNS setup and reconfigure
+
+</td>
+</tr>
+</table>
+
+### Security & Networking
+
+<table>
+<tr>
+<td width="50%">
+
+#### SSL Certificates
+- Auto-generate trusted local certs via **mkcert**
+- Wildcard certificate support
+- Install local CA with one click
+- Manage and delete certificates
+
+</td>
+<td width="50%">
+
+#### Tunnels
+- **Cloudflare Tunnel** — Free, no account needed
+- **ngrok** — Full tunnel support
+- Click-to-install providers (no manual brew commands)
+- Copy public URL, open in browser
+- Auto-detects tunnel URL from logs
+
+</td>
+</tr>
+</table>
+
+### Advanced Tools
+
+<table>
+<tr>
+<td width="33%">
+
+#### AI (Ollama)
+- Pull and manage LLM models
+- Start/stop Ollama service
+- Click-to-install
+- Model list with sizes
+
+</td>
+<td width="33%">
+
+#### Mail (Mailpit)
+- Local mail server
+- Click-to-install
+- Start/stop with one click
+- Catch all outgoing mail
+
+</td>
+<td width="33%">
+
+#### Search (Meilisearch)
+- Full-text search engine
+- Click-to-install
+- Start/stop service
+- Lightning fast indexing
+
+</td>
+</tr>
+<tr>
+<td>
+
+#### Object Storage (MinIO)
+- S3-compatible storage
+- Click-to-install
+- Start/stop service
+- Local development storage
+
+</td>
+<td>
+
+#### Backup & Restore
+- Backup sites and databases
+- Scheduled backups
+- One-click restore
+- Manage backup history
+
+</td>
+<td>
+
+#### Packages
+- Full Homebrew package list
+- Install, upgrade, uninstall
+- Check for updates
+- Upgrade all at once
+
+</td>
+</tr>
+</table>
+
+### App Experience
+
+<table>
+<tr>
+<td width="50%">
+
+#### Settings
+- **Dark / Light / Auto** theme
+- Launch at login toggle
+- Custom domain suffix (`.test`, `.local`, etc.)
+- Auto-start services on launch
+- Persistent preferences
+
+</td>
+<td width="50%">
+
+#### System
+- **Onboarding Wizard** — First-run guided setup
+- **Troubleshoot** — Diagnostics for nginx, PHP, MySQL, ports, DNS, CA, disk
+- **System Tray** — Quick access from menu bar
+- **Toast Notifications** — Feedback on every action
+
+</td>
+</tr>
+</table>
+
+---
 
 ## Requirements
 
 - **macOS** (Apple Silicon or Intel)
 - **Homebrew** — DevStack uses Homebrew to install and manage all services
 
-> DevStack will guide you through installing everything else via the built-in onboarding wizard.
+> DevStack will guide you through installing everything else via the built-in **Onboarding Wizard**.
+
+---
 
 ## Getting Started
 
@@ -62,157 +268,183 @@ npm run tauri build
 ```
 
 The built app will be at:
-- **App:** `src-tauri/target/release/bundle/macos/DevStack.app`
-- **DMG:** `src-tauri/target/release/bundle/dmg/DevStack_0.1.0_aarch64.dmg`
+```
+src-tauri/target/release/bundle/macos/DevStack.app
+src-tauri/target/release/bundle/dmg/DevStack_0.1.0_aarch64.dmg
+```
+
+---
 
 ## First Run
 
-When you launch DevStack for the first time, the **Onboarding Wizard** will check your system and help you set up:
+When you launch DevStack for the first time, the **Onboarding Wizard** checks your system and walks you through setup:
 
-1. **Create Dirs** — Creates `~/.devstack` directory structure
-2. **Install Essentials** — Installs nginx, PHP, MySQL, Node.js, Redis via Homebrew
-3. **Setup SSL CA** — Installs a local Certificate Authority via mkcert
-4. **Setup DNS** — Configures dnsmasq for local `.test` domains
-5. **Start Services** — Starts all installed services
+| Step | What it does |
+|------|-------------|
+| **Create Dirs** | Creates `~/.devstack` directory structure |
+| **Install Essentials** | Installs nginx, PHP, MySQL, Node.js, Redis via Homebrew |
+| **Setup SSL CA** | Installs a local Certificate Authority via mkcert |
+| **Setup DNS** | Configures dnsmasq for `.test` domains |
+| **Start Services** | Starts all installed services |
 
-Click each button or use **Quick Setup** to run them all. You can skip and set up later.
+You can run each step individually or skip and set up later.
+
+---
 
 ## Usage
 
-### Creating a Site
+### Create a Website
 
-1. Go to **Websites** in the sidebar
-2. Click **Create Site**
-3. Enter a name (e.g., `myapp`) — it becomes `myapp.test`
-4. Choose a type: PHP, Node.js, Python, Static, or WordPress
-5. Click **Create**
+```
+Websites → Create Site → name: myapp, type: PHP → Create
+```
 
 DevStack automatically:
-- Creates the site directory at `~/.devstack/sites/myapp`
-- Generates an nginx config with SSL
-- Creates a trusted SSL certificate
-- Adds the DNS entry
+- Creates `~/.devstack/sites/myapp/`
+- Generates nginx config with SSL
+- Creates a trusted SSL certificate via mkcert
+- Configures DNS → `myapp.test`
 
-Visit `https://myapp.test` in your browser.
+Visit **https://myapp.test** in your browser.
 
-### Exposing a Site via Tunnel
+### Expose via Tunnel
 
-1. Go to **Tunnel** in the sidebar
-2. Install Cloudflare Tunnel or ngrok (one-click install)
-3. Select a port and provider
-4. Click **Create Tunnel**
-5. Copy the public URL and share it
+```
+Tunnel → Install Cloudflare (one click) → Port: 443 → Create Tunnel → Copy URL
+```
 
-### Managing Databases
+Share the public URL with anyone — they can access your local site.
 
-1. Go to **Databases** in the sidebar
-2. Select MySQL or PostgreSQL
-3. Create, drop, import (`.sql`), or export databases
-4. Edit config files directly in the app
+### Manage Databases
 
-### Switching PHP Versions
+```
+Databases → MySQL → Create Database → name: myapp_db
+```
 
-1. Go to **Languages** in the sidebar
-2. See all installed PHP versions
-3. Click to switch the active version — nginx restarts automatically
+Import `.sql` files, export backups, edit configs — all in the GUI.
+
+### Switch PHP Version
+
+```
+Languages → PHP → Click desired version → nginx reloads automatically
+```
+
+---
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| **Framework** | [Tauri v2](https://v2.tauri.app/) |
+| **Framework** | [Tauri v2](https://v2.tauri.app/) (native, lightweight) |
 | **Frontend** | React 19, TypeScript 5.9, Vite 8 |
-| **Backend** | Rust (2021 edition) |
+| **Backend** | Rust 2021 edition |
 | **Package Manager** | Homebrew |
-| **Styling** | Custom CSS with dark/light theme support |
+| **Styling** | Custom CSS (dark + light theme, no framework) |
+
+---
 
 ## Project Structure
 
 ```
 devstack-app/
-├── src/                    # React frontend
-│   ├── App.tsx             # Main layout, sidebar, routing
-│   ├── main.tsx            # Entry point
-│   ├── ToastContext.tsx     # Toast notification system
-│   ├── styles.css          # All styles (dark + light theme)
+├── src/                        # React frontend
+│   ├── App.tsx                 # Layout, sidebar, routing, onboarding
+│   ├── main.tsx                # Entry point
+│   ├── ToastContext.tsx         # Global toast notifications
+│   ├── styles.css              # All styles (1400+ lines, dark + light)
 │   └── components/
-│       ├── Dashboard.tsx    # System overview
-│       ├── Websites.tsx     # Site management
-│       ├── WebServer.tsx    # Nginx control
-│       ├── Databases.tsx    # MySQL/PostgreSQL
-│       ├── Languages.tsx    # PHP, Node, Python, Go
-│       ├── DNS.tsx          # dnsmasq + /etc/hosts
-│       ├── SSL.tsx          # mkcert certificates
-│       ├── Tunnel.tsx       # Cloudflare/ngrok tunnels
-│       ├── AI.tsx           # Ollama models
-│       ├── Mail.tsx         # Mailpit
-│       ├── Search.tsx       # Meilisearch
-│       ├── ObjectStorage.tsx # MinIO
-│       ├── Packages.tsx     # Homebrew packages
-│       ├── Backup.tsx       # Backup/restore
-│       ├── Settings.tsx     # App preferences
-│       └── Troubleshoot.tsx # Diagnostics
-├── src-tauri/              # Rust backend
+│       ├── Dashboard.tsx        # System overview, service grid
+│       ├── Websites.tsx         # Site CRUD, logs, config
+│       ├── WebServer.tsx        # nginx control, log tailing
+│       ├── Databases.tsx        # MySQL/PostgreSQL management
+│       ├── Languages.tsx        # Runtime version management
+│       ├── DNS.tsx              # dnsmasq + /etc/hosts
+│       ├── SSL.tsx              # mkcert certificates
+│       ├── Tunnel.tsx           # Cloudflare/ngrok tunnels
+│       ├── AI.tsx               # Ollama models
+│       ├── Mail.tsx             # Mailpit service
+│       ├── Search.tsx           # Meilisearch service
+│       ├── ObjectStorage.tsx    # MinIO service
+│       ├── Packages.tsx         # Homebrew package management
+│       ├── Backup.tsx           # Backup/restore
+│       ├── Settings.tsx         # App preferences
+│       └── Troubleshoot.tsx     # System diagnostics
+├── src-tauri/                   # Rust backend
 │   ├── src/
-│   │   ├── lib.rs          # All Tauri commands (~1600 lines)
-│   │   └── main.rs         # App entry point
-│   ├── Cargo.toml          # Rust dependencies
-│   └── tauri.conf.json     # Tauri config
+│   │   ├── lib.rs              # 65+ Tauri commands (~1600 lines)
+│   │   └── main.rs             # App entry
+│   ├── Cargo.toml
+│   └── tauri.conf.json
+├── screenshots/                 # App screenshots
 ├── package.json
 ├── tsconfig.json
 └── vite.config.ts
 ```
 
-## Contributing
-
-1. Fork the repo
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Make your changes
-4. Build and test: `npm run tauri build`
-5. Commit: `git commit -m "Add my feature"`
-6. Push: `git push origin feature/my-feature`
-7. Open a Pull Request
-
-### Adding a New Service
-
-To add support for a new service (e.g., MongoDB):
-
-1. **Backend** (`src-tauri/src/lib.rs`):
-   - Add Tauri commands for status, start/stop, config
-   - Register commands in `invoke_handler`
-
-2. **Frontend** (`src/components/YourService.tsx`):
-   - Create a new component
-   - Use `invoke()` to call your backend commands
-   - Add toast notifications for user feedback
-
-3. **Sidebar** (`src/App.tsx`):
-   - Add menu item to the appropriate section
-
-4. **Styles** (`src/styles.css`):
-   - Reuse existing card/table/button styles
+---
 
 ## Supported Services
 
-| Service | Homebrew Formula | Purpose |
-|---------|-----------------|---------|
+| Service | Formula | Purpose |
+|---------|---------|---------|
 | nginx | `nginx` | Web server / reverse proxy |
-| PHP | `php` | PHP-FPM (multiple versions) |
+| PHP | `php` | PHP-FPM (multi-version) |
 | MySQL | `mysql` | Relational database |
 | PostgreSQL | `postgresql@17` | Relational database |
-| Redis | `redis` | In-memory cache |
+| Redis | `redis` | In-memory cache / store |
 | Node.js | `node` | JavaScript runtime |
 | Python | `python` | Python runtime |
 | Go | `go` | Go runtime |
 | dnsmasq | `dnsmasq` | Local DNS server |
-| mkcert | `mkcert` | Local SSL certificates |
-| Mailpit | `mailpit` | Local mail server |
+| mkcert | `mkcert` | Trusted local SSL certs |
+| Mailpit | `mailpit` | Local mail catch-all |
 | Meilisearch | `meilisearch` | Search engine |
 | MinIO | `minio` | S3-compatible storage |
-| Ollama | `ollama` | Local AI/LLM |
+| Ollama | `ollama` | Local AI / LLMs |
 | Cloudflare Tunnel | `cloudflare/cloudflare/cloudflared` | Public tunnels |
 | ngrok | `ngrok/ngrok/ngrok` | Public tunnels |
 
+---
+
+## Contributing
+
+1. Fork the repo
+2. Create a branch: `git checkout -b feature/my-feature`
+3. Make your changes
+4. Build and test: `npm run tauri build`
+5. Commit and push
+6. Open a Pull Request
+
+### Adding a New Service
+
+1. **Backend** — Add Tauri commands in `src-tauri/src/lib.rs` and register in `invoke_handler`
+2. **Frontend** — Create `src/components/YourService.tsx`, use `invoke()` to call commands
+3. **Sidebar** — Add menu item in `src/App.tsx`
+4. **Styles** — Reuse existing card/table/button classes from `src/styles.css`
+
+---
+
+## Roadmap
+
+- [ ] Linux support (apt/dnf package manager backend)
+- [ ] Windows support (choco/winget/scoop backend)
+- [ ] Docker container management
+- [ ] MongoDB support
+- [ ] Queue management (Redis queues, RabbitMQ)
+- [ ] Cron job management
+- [ ] Multiple PHP-FPM pools per site
+- [ ] Site templates (Laravel, Next.js, Django, etc.)
+- [ ] Auto-update mechanism
+
+---
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) for details.
+
+---
+
+<p align="center">
+  Built with Tauri, React, and Rust<br>
+  <sub>Made by <a href="https://github.com/hamza-younas94">Hamza Younas</a></sub>
+</p>
