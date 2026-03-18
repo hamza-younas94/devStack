@@ -201,7 +201,7 @@ export default function Dashboard() {
     refresh();
     let alive = true;
 
-    // Stats polling — 10s, skip if tab hidden or previous call still in-flight
+    // Stats polling — 30s, skip if tab hidden or previous call still in-flight
     let statsBusy = false;
     const statsInterval = setInterval(async () => {
       if (document.hidden || statsBusy || !alive) return;
@@ -211,9 +211,9 @@ export default function Dashboard() {
         if (alive) setStats(st);
       } catch { /* ignore */ }
       statsBusy = false;
-    }, 10000);
+    }, 30000);
 
-    // Dashboard data — 30s, skip if tab hidden
+    // Dashboard data — 60s, skip if tab hidden
     let dashBusy = false;
     const dashInterval = setInterval(async () => {
       if (document.hidden || dashBusy || !alive) return;
@@ -226,7 +226,7 @@ export default function Dashboard() {
         if (alive) { setData(d); setSites(s); }
       } catch { /* ignore */ }
       dashBusy = false;
-    }, 30000);
+    }, 60000);
 
     // Uptime counter — every second
     const uptimeInterval = setInterval(() => {
@@ -262,6 +262,19 @@ export default function Dashboard() {
       toast("All services stopped", "success");
     } catch (e) {
       toast(`Failed to stop services: ${e}`, "error");
+    }
+    setActionLoading("");
+  };
+
+  const toggleService = async (svc: ServiceStatus) => {
+    const action = svc.status === "running" ? "stop" : "start";
+    setActionLoading(`svc-${svc.name}`);
+    try {
+      await invoke("toggle_service", { name: svc.brew_name || svc.name, action });
+      await refresh();
+      toast(`${svc.display_name || svc.name} ${action === "start" ? "started" : "stopped"}`, "success");
+    } catch (e) {
+      toast(`Failed to ${action} ${svc.display_name || svc.name}: ${e}`, "error");
     }
     setActionLoading("");
   };
@@ -501,6 +514,18 @@ export default function Dashboard() {
                       <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 1, fontFamily: "monospace" }}>
                         PID {svc.pid}
                       </div>
+                    )}
+                    {!notInstalled && (
+                      <button
+                        className={`btn btn-xs ${running ? "btn-danger" : "btn-success"}`}
+                        style={{ marginTop: 6, width: "100%", fontSize: 10, padding: "3px 0" }}
+                        disabled={actionLoading === `svc-${svc.name}`}
+                        onClick={() => toggleService(svc)}
+                      >
+                        {actionLoading === `svc-${svc.name}` ? (
+                          <span className="spinner" />
+                        ) : running ? "Stop" : "Start"}
+                      </button>
                     )}
                   </div>
                 );

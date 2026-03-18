@@ -97,25 +97,29 @@ pub struct DashboardData {
 
 #[tauri::command]
 fn get_system_stats() -> SystemStats {
-    // Use ps instead of top -l 1 (top takes ~1-2s, ps is instant)
-    let cpu = run_shell("ps -A -o %cpu | awk '{s+=$1} END {printf \"%.1f\", s/4}'")
-        .output.trim().to_string();
-    let mem_info = run_shell("sysctl -n hw.memsize 2>/dev/null").output.trim().to_string();
-    let mem_total_gb = mem_info.parse::<f64>().unwrap_or(0.0) / 1073741824.0;
-    // Use vm_stat instead of memory_pressure (instant vs ~1s)
-    let vm = run_shell("vm_stat 2>/dev/null | awk '/Pages (active|wired|compressed)/ {gsub(/\\./, \"\", $NF); sum+=$NF} END {printf \"%.1f\", sum*4096/1073741824}'")
-        .output.trim().to_string();
-    let mem_used_gb = vm.parse::<f64>().unwrap_or(0.0);
-    let disk = run_shell("df -h / 2>/dev/null | tail -1 | awk '{print $3\"|\"$2}'").output.trim().to_string();
-    let disk_parts: Vec<&str> = disk.split('|').collect();
-    let ip = run_shell("ipconfig getifaddr en0 2>/dev/null || echo '127.0.0.1'").output.trim().to_string();
+    // Single shell call for all system stats
+    let out = run_shell(r#"
+        cpu=$(ps -A -o %cpu | awk '{s+=$1} END {printf "%.1f", s/4}')
+        mem_total=$(sysctl -n hw.memsize 2>/dev/null)
+        mem_used=$(vm_stat 2>/dev/null | awk '/Pages (active|wired|compressed)/ {gsub(/\./, "", $NF); sum+=$NF} END {printf "%.1f", sum*4096/1073741824}')
+        disk=$(df -h / 2>/dev/null | tail -1 | awk '{print $3"|"$2}')
+        ip=$(ipconfig getifaddr en0 2>/dev/null || echo '127.0.0.1')
+        echo "${cpu}|${mem_total}|${mem_used}|${disk}|${ip}"
+    "#).output;
+    let parts: Vec<&str> = out.trim().splitn(6, '|').collect();
+    let cpu = parts.first().unwrap_or(&"0").to_string();
+    let mem_total_gb = parts.get(1).unwrap_or(&"0").parse::<f64>().unwrap_or(0.0) / 1073741824.0;
+    let mem_used = parts.get(2).unwrap_or(&"0").to_string();
+    let disk_used = parts.get(3).unwrap_or(&"0").to_string();
+    let disk_total = parts.get(4).unwrap_or(&"0").to_string();
+    let ip = parts.get(5).unwrap_or(&"127.0.0.1").to_string();
 
     SystemStats {
         cpu_usage: if cpu.is_empty() { "0".into() } else { cpu },
-        memory_used: format!("{:.1}", mem_used_gb),
+        memory_used: format!("{:.1}", mem_used.parse::<f64>().unwrap_or(0.0)),
         memory_total: format!("{:.1}", mem_total_gb),
-        disk_used: disk_parts.first().unwrap_or(&"0").to_string(),
-        disk_total: disk_parts.get(1).unwrap_or(&"0").to_string(),
+        disk_used,
+        disk_total,
         ip_address: ip,
     }
 }
@@ -799,8 +803,9 @@ fn check_installed(name: String) -> bool {
 #[tauri::command]
 fn list_databases(db_type: String) -> CmdResult {
     match db_type.as_str() {
-        "mysql" => run_shell("mysql -u root -e 'SHOW DATABASES;' 2>/dev/null"),
+        "mysql" | "mariadb" => run_shell("mysql -u root -e 'SHOW DATABASES;' 2>/dev/null"),
         "postgres" => run_shell("psql -l 2>/dev/null"),
+        "mongodb" => run_shell("mongosh --quiet --eval 'db.adminCommand({listDatabases:1}).databases.forEach(d => print(d.name))' 2>/dev/null"),
         _ => CmdResult { success: false, output: String::new(), error: "Unknown DB type".into() },
     }
 }
@@ -808,8 +813,9 @@ fn list_databases(db_type: String) -> CmdResult {
 #[tauri::command]
 fn create_database(db_type: String, name: String) -> CmdResult {
     match db_type.as_str() {
-        "mysql" => run_shell(&format!("mysql -u root -e \"CREATE DATABASE IF NOT EXISTS \\`{}\\`;\" 2>&1", name)),
+        "mysql" | "mariadb" => run_shell(&format!("mysql -u root -e \"CREATE DATABASE IF NOT EXISTS \\`{}\\`;\" 2>&1", name)),
         "postgres" => run_shell(&format!("createdb '{}' 2>&1", name)),
+        "mongodb" => run_shell(&format!("mongosh --quiet --eval 'use {}' 2>&1", name)),
         _ => CmdResult { success: false, output: String::new(), error: "Unknown DB type".into() },
     }
 }
@@ -817,8 +823,9 @@ fn create_database(db_type: String, name: String) -> CmdResult {
 #[tauri::command]
 fn drop_database(db_type: String, name: String) -> CmdResult {
     match db_type.as_str() {
-        "mysql" => run_shell(&format!("mysql -u root -e \"DROP DATABASE IF EXISTS \\`{}\\`;\" 2>&1", name)),
+        "mysql" | "mariadb" => run_shell(&format!("mysql -u root -e \"DROP DATABASE IF EXISTS \\`{}\\`;\" 2>&1", name)),
         "postgres" => run_shell(&format!("dropdb '{}' 2>&1", name)),
+        "mongodb" => run_shell(&format!("mongosh --quiet --eval 'db.getSiblingDB(\"{}\").dropDatabase()' 2>&1", name)),
         _ => CmdResult { success: false, output: String::new(), error: "Unknown DB type".into() },
     }
 }
@@ -1186,8 +1193,9 @@ fn delete_backup(id: String) -> CmdResult {
 #[tauri::command]
 fn import_database(db_type: String, name: String, file_path: String) -> CmdResult {
     match db_type.as_str() {
-        "mysql" => run_shell(&format!("mysql -u root '{}' < '{}' 2>&1", name, file_path)),
+        "mysql" | "mariadb" => run_shell(&format!("mysql -u root '{}' < '{}' 2>&1", name, file_path)),
         "postgres" => run_shell(&format!("psql '{}' < '{}' 2>&1", name, file_path)),
+        "mongodb" => run_shell(&format!("mongorestore --db '{}' '{}' 2>&1", name, file_path)),
         _ => CmdResult { success: false, output: String::new(), error: "Unsupported DB type".into() },
     }
 }
@@ -1195,8 +1203,9 @@ fn import_database(db_type: String, name: String, file_path: String) -> CmdResul
 #[tauri::command]
 fn export_database(db_type: String, name: String, file_path: String) -> CmdResult {
     match db_type.as_str() {
-        "mysql" => run_shell(&format!("mysqldump -u root '{}' > '{}' 2>&1", name, file_path)),
+        "mysql" | "mariadb" => run_shell(&format!("mysqldump -u root '{}' > '{}' 2>&1", name, file_path)),
         "postgres" => run_shell(&format!("pg_dump '{}' > '{}' 2>&1", name, file_path)),
+        "mongodb" => run_shell(&format!("mongodump --db '{}' --out '{}' 2>&1", name, file_path)),
         _ => CmdResult { success: false, output: String::new(), error: "Unsupported DB type".into() },
     }
 }
@@ -1551,6 +1560,248 @@ fn save_hosts_entries(entries: Vec<HostEntry>) -> CmdResult {
     result
 }
 
+// ── Docker ──────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+struct DockerContainer {
+    id: String,
+    name: String,
+    image: String,
+    status: String,
+    ports: String,
+    state: String,
+}
+
+#[derive(serde::Serialize)]
+struct DockerImage {
+    id: String,
+    repository: String,
+    tag: String,
+    size: String,
+    created: String,
+}
+
+#[tauri::command]
+fn get_docker_containers() -> Vec<DockerContainer> {
+    let out = run_shell("docker ps -a --format '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}|{{.State}}' 2>/dev/null").output;
+    out.trim().lines().filter(|l| !l.is_empty()).map(|line| {
+        let p: Vec<&str> = line.splitn(6, '|').collect();
+        DockerContainer {
+            id: p.first().unwrap_or(&"").to_string(),
+            name: p.get(1).unwrap_or(&"").to_string(),
+            image: p.get(2).unwrap_or(&"").to_string(),
+            status: p.get(3).unwrap_or(&"").to_string(),
+            ports: p.get(4).unwrap_or(&"").to_string(),
+            state: p.get(5).unwrap_or(&"").to_string(),
+        }
+    }).collect()
+}
+
+#[tauri::command]
+fn get_docker_images() -> Vec<DockerImage> {
+    let out = run_shell("docker images --format '{{.ID}}|{{.Repository}}|{{.Tag}}|{{.Size}}|{{.CreatedSince}}' 2>/dev/null").output;
+    out.trim().lines().filter(|l| !l.is_empty()).map(|line| {
+        let p: Vec<&str> = line.splitn(5, '|').collect();
+        DockerImage {
+            id: p.first().unwrap_or(&"").to_string(),
+            repository: p.get(1).unwrap_or(&"").to_string(),
+            tag: p.get(2).unwrap_or(&"").to_string(),
+            size: p.get(3).unwrap_or(&"").to_string(),
+            created: p.get(4).unwrap_or(&"").to_string(),
+        }
+    }).collect()
+}
+
+#[tauri::command]
+fn docker_action(container_id: String, action: String) -> CmdResult {
+    run_shell(&format!("docker {} '{}' 2>&1", action, container_id))
+}
+
+#[tauri::command]
+fn docker_remove_container(container_id: String, force: bool) -> CmdResult {
+    let f = if force { " -f" } else { "" };
+    run_shell(&format!("docker rm{} '{}' 2>&1", f, container_id))
+}
+
+#[tauri::command]
+fn docker_remove_image(image_id: String, force: bool) -> CmdResult {
+    let f = if force { " -f" } else { "" };
+    run_shell(&format!("docker rmi{} '{}' 2>&1", f, image_id))
+}
+
+#[tauri::command]
+fn docker_pull_image(image: String) -> CmdResult {
+    run_shell(&format!("docker pull '{}' 2>&1", image))
+}
+
+#[tauri::command]
+fn get_docker_logs(container_id: String) -> String {
+    run_shell(&format!("docker logs --tail 100 '{}' 2>&1", container_id)).output
+}
+
+// ── Queue Management ────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+struct QueueInfo {
+    name: String,
+    queue_type: String, // redis or rabbitmq
+    status: String,
+    messages: String,
+    consumers: String,
+}
+
+#[tauri::command]
+fn get_redis_queues() -> Vec<QueueInfo> {
+    let out = run_shell("redis-cli KEYS 'queue:*' 'bull:*' 'laravel_*' 2>/dev/null").output;
+    let mut queues = Vec::new();
+    for line in out.trim().lines() {
+        let l = line.trim();
+        if l.is_empty() || l.starts_with("ERR") || l.starts_with("(") { continue; }
+        let len = run_shell(&format!("redis-cli LLEN '{}' 2>/dev/null", l)).output.trim().to_string();
+        queues.push(QueueInfo {
+            name: l.to_string(),
+            queue_type: "redis".into(),
+            status: "active".into(),
+            messages: if len.parse::<i64>().is_ok() { len } else { "0".into() },
+            consumers: "-".into(),
+        });
+    }
+    queues
+}
+
+#[tauri::command]
+fn get_rabbitmq_queues() -> Vec<QueueInfo> {
+    let out = run_shell("rabbitmqctl list_queues name messages consumers 2>/dev/null").output;
+    out.trim().lines().skip(1).filter(|l| !l.is_empty()).map(|line| {
+        let p: Vec<&str> = line.split_whitespace().collect();
+        QueueInfo {
+            name: p.first().unwrap_or(&"").to_string(),
+            queue_type: "rabbitmq".into(),
+            status: "active".into(),
+            messages: p.get(1).unwrap_or(&"0").to_string(),
+            consumers: p.get(2).unwrap_or(&"0").to_string(),
+        }
+    }).collect()
+}
+
+#[tauri::command]
+fn redis_queue_action(queue: String, action: String) -> CmdResult {
+    match action.as_str() {
+        "flush" => run_shell(&format!("redis-cli DEL '{}' 2>&1", queue)),
+        "peek" => {
+            let out = run_shell(&format!("redis-cli LRANGE '{}' 0 9 2>&1", queue));
+            out
+        },
+        _ => CmdResult { success: false, output: String::new(), error: "Unknown action".into() },
+    }
+}
+
+// ── Cron Jobs ───────────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+struct CronJob {
+    schedule: String,
+    command: String,
+    raw: String,
+}
+
+#[tauri::command]
+fn get_cron_jobs() -> Vec<CronJob> {
+    let out = run_shell("crontab -l 2>/dev/null").output;
+    out.trim().lines().filter(|l| {
+        let t = l.trim();
+        !t.is_empty() && !t.starts_with('#')
+    }).map(|line| {
+        let parts: Vec<&str> = line.splitn(6, char::is_whitespace).collect();
+        if parts.len() >= 6 {
+            CronJob {
+                schedule: parts[..5].join(" "),
+                command: parts[5..].join(" "),
+                raw: line.to_string(),
+            }
+        } else {
+            CronJob {
+                schedule: String::new(),
+                command: line.to_string(),
+                raw: line.to_string(),
+            }
+        }
+    }).collect()
+}
+
+#[tauri::command]
+fn add_cron_job(schedule: String, command: String) -> CmdResult {
+    let entry = format!("{} {}", schedule, command);
+    run_shell(&format!(
+        "(crontab -l 2>/dev/null; echo '{}') | sort -u | crontab - 2>&1",
+        entry.replace('\'', "'\\''")
+    ))
+}
+
+#[tauri::command]
+fn remove_cron_job(raw: String) -> CmdResult {
+    run_shell(&format!(
+        "crontab -l 2>/dev/null | grep -vF '{}' | crontab - 2>&1",
+        raw.replace('\'', "'\\''")
+    ))
+}
+
+#[tauri::command]
+fn get_cron_raw() -> String {
+    run_shell("crontab -l 2>/dev/null").output
+}
+
+#[tauri::command]
+fn save_cron_raw(content: String) -> CmdResult {
+    let tmp = format!("/tmp/devstack_cron_{}", std::process::id());
+    let _ = std::fs::write(&tmp, &content);
+    let result = run_shell(&format!("crontab '{}' 2>&1", tmp));
+    let _ = std::fs::remove_file(&tmp);
+    result
+}
+
+// ── Site Templates ──────────────────────────────────────────────────
+
+#[tauri::command]
+fn create_from_template(name: String, template: String, _domain: String) -> CmdResult {
+    let site_dir = format!("{}/.devstack/sites/{}", std::env::var("HOME").unwrap_or_default(), name);
+    let _ = std::fs::create_dir_all(&site_dir);
+
+    let cmd = match template.as_str() {
+        "laravel" => format!(
+            "cd '{}' && composer create-project laravel/laravel . 2>&1",
+            site_dir
+        ),
+        "nextjs" => format!(
+            "cd '{}' && npx create-next-app@latest . --ts --app --no-git --use-npm 2>&1",
+            site_dir
+        ),
+        "django" => format!(
+            "cd '{}' && python3 -m venv venv && source venv/bin/activate && pip install django && django-admin startproject app . 2>&1",
+            site_dir
+        ),
+        "wordpress" => format!(
+            "cd '{}' && curl -sO https://wordpress.org/latest.tar.gz && tar -xzf latest.tar.gz --strip-components=1 && rm latest.tar.gz 2>&1",
+            site_dir
+        ),
+        "symfony" => format!(
+            "cd '{}' && composer create-project symfony/skeleton . 2>&1",
+            site_dir
+        ),
+        "express" => format!(
+            "cd '{}' && npm init -y && npm install express && echo \"const express = require('express');\\nconst app = express();\\napp.get('/', (req, res) => res.send('Hello from Express'));\\napp.listen(3000, () => console.log('Server running on port 3000'));\" > index.js 2>&1",
+            site_dir
+        ),
+        "static" => format!(
+            "cd '{}' && echo '<!DOCTYPE html><html><head><title>{}</title></head><body><h1>Welcome to {}</h1></body></html>' > index.html 2>&1",
+            site_dir, name, name
+        ),
+        _ => format!("echo 'Unknown template: {}'", template),
+    };
+
+    run_shell(&cmd)
+}
+
 // ── Main ───────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1643,6 +1894,15 @@ pub fn run() {
             get_site_logs, get_hosts_entries, save_hosts_entries,
             load_settings, save_settings,
             check_installed,
+            // Docker
+            get_docker_containers, get_docker_images, docker_action,
+            docker_remove_container, docker_remove_image, docker_pull_image, get_docker_logs,
+            // Queues
+            get_redis_queues, get_rabbitmq_queues, redis_queue_action,
+            // Cron
+            get_cron_jobs, add_cron_job, remove_cron_job, get_cron_raw, save_cron_raw,
+            // Templates
+            create_from_template,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

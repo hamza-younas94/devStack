@@ -16,12 +16,15 @@ import Backup from "./components/Backup";
 import Packages from "./components/Packages";
 import Settings from "./components/Settings";
 import Troubleshoot from "./components/Troubleshoot";
+import Docker from "./components/Docker";
+import Queues from "./components/Queues";
+import CronJobs from "./components/CronJobs";
 
 type Page =
   | "dashboard" | "websites" | "dns" | "ssl" | "databases"
   | "languages" | "mail" | "webserver" | "tunnel" | "ai"
   | "search" | "objectstorage" | "backup" | "packages"
-  | "settings" | "troubleshoot";
+  | "settings" | "troubleshoot" | "docker" | "queues" | "cronjobs";
 
 interface NavItem {
   id: Page;
@@ -32,14 +35,6 @@ interface NavItem {
 interface NavGroup {
   section: string;
   items: NavItem[];
-}
-
-interface DashboardData {
-  services: { name: string; status: string }[];
-  runtimes: { name: string; status: string }[];
-  site_count: number;
-  dns_ok: boolean;
-  ca_ok: boolean;
 }
 
 interface CmdResult {
@@ -71,6 +66,9 @@ const nav: NavGroup[] = [
     section: "Advanced",
     items: [
       { id: "tunnel", icon: "⇋", label: "Tunnel" },
+      { id: "docker", icon: "⬡", label: "Docker" },
+      { id: "queues", icon: "⇶", label: "Queues" },
+      { id: "cronjobs", icon: "⏱", label: "Cron Jobs" },
       { id: "ai", icon: "◈", label: "AI" },
       { id: "search", icon: "⊙", label: "Search" },
       { id: "objectstorage", icon: "▣", label: "Object Storage" },
@@ -104,6 +102,9 @@ const pageComponents: Record<Page, React.FC> = {
   packages: Packages,
   settings: Settings,
   troubleshoot: Troubleshoot,
+  docker: Docker,
+  queues: Queues,
+  cronjobs: CronJobs,
 };
 
 /* ── Onboarding Wizard ──────────────────────────────────── */
@@ -264,17 +265,20 @@ export default function App() {
       if (document.hidden || busy) return;
       busy = true;
       try {
-        const data = await invoke<DashboardData>("get_dashboard");
-        const all = [...data.services, ...data.runtimes];
-        setTotalCount(all.length);
-        setRunningCount(all.filter((s) => s.status === "running" || s.status === "available").length);
+        // Lightweight: just count running brew services instead of full get_dashboard
+        const r = await invoke<CmdResult>("run_shell", { cmd: "brew services list 2>/dev/null | grep started | wc -l" });
+        const running = parseInt(r.output.trim()) || 0;
+        const r2 = await invoke<CmdResult>("run_shell", { cmd: "brew services list 2>/dev/null | tail -n +2 | wc -l" });
+        const total = parseInt(r2.output.trim()) || 0;
+        setRunningCount(running);
+        setTotalCount(total);
       } catch {
         // ignore
       }
       busy = false;
     };
     fetchStatus();
-    const interval = setInterval(fetchStatus, 30000);
+    const interval = setInterval(fetchStatus, 60000);
     return () => clearInterval(interval);
   }, []);
 

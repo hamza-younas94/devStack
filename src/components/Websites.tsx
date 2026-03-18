@@ -81,7 +81,19 @@ const defaultForm = {
   node_version: "",
   python_version: "",
   custom_nginx: "",
+  template: "none",
 };
+
+const templates: { id: string; label: string; type: string; rewrite?: string }[] = [
+  { id: "none", label: "Empty Project", type: "" },
+  { id: "laravel", label: "Laravel", type: "php", rewrite: "laravel" },
+  { id: "wordpress", label: "WordPress", type: "php", rewrite: "wordpress" },
+  { id: "symfony", label: "Symfony", type: "php", rewrite: "symfony" },
+  { id: "nextjs", label: "Next.js", type: "node" },
+  { id: "express", label: "Express.js", type: "node" },
+  { id: "django", label: "Django", type: "python" },
+  { id: "static", label: "Static HTML", type: "static" },
+];
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "general", label: "General" },
@@ -163,6 +175,7 @@ export default function Websites() {
       node_version: site.node_version || "",
       python_version: site.python_version || "",
       custom_nginx: site.custom_nginx || "",
+      template: "none",
     });
     setEditMode(true);
     setMessage("");
@@ -236,6 +249,12 @@ export default function Websites() {
         customNginx: form.custom_nginx,
       });
       if (result.success) {
+        // Scaffold from template if selected
+        if (form.template && form.template !== "none") {
+          try {
+            await invoke("create_from_template", { name: form.name, template: form.template, domain });
+          } catch { /* template scaffold is best-effort */ }
+        }
         setShowCreate(false);
         setForm({ ...defaultForm });
         setMessage("");
@@ -1138,6 +1157,35 @@ export default function Websites() {
               />
               <div className="form-hint">
                 Auto-filled based on site name. Change if needed.
+              </div>
+            </div>
+
+            {/* Template */}
+            <div className="form-group">
+              <label className="form-label">Project Template</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {templates.map((t) => (
+                  <button
+                    key={t.id}
+                    className={`btn btn-xs${form.template === t.id ? " btn-primary" : ""}`}
+                    style={{ fontSize: 11, padding: "4px 10px" }}
+                    onClick={() => {
+                      const updates: Record<string, unknown> = { template: t.id };
+                      if (t.type) updates.site_type = t.type;
+                      if (t.rewrite) updates.rewrite_rule = t.rewrite;
+                      if (t.type === "node") updates.port = "3000";
+                      if (t.type === "python") updates.port = "8000";
+                      setForm({ ...form, ...updates } as typeof form);
+                    }}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              <div className="form-hint">
+                {form.template !== "none"
+                  ? `Will scaffold a ${templates.find(t => t.id === form.template)?.label} project after creating the site.`
+                  : "Optional — select a framework to auto-scaffold the project files."}
               </div>
             </div>
 
