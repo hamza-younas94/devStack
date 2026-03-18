@@ -426,14 +426,15 @@ devstack-app/
 
 ## Roadmap
 
+- [x] Docker container management
+- [x] MongoDB support
+- [x] Queue management (Redis queues, RabbitMQ)
+- [x] Cron job management
+- [x] Site templates (Laravel, Next.js, Django, WordPress, Symfony, Express)
+- [x] Google Cloud Run deployment
 - [ ] Linux support (apt/dnf package manager backend)
 - [ ] Windows support (choco/winget/scoop backend)
-- [ ] Docker container management
-- [ ] MongoDB support
-- [ ] Queue management (Redis queues, RabbitMQ)
-- [ ] Cron job management
 - [ ] Multiple PHP-FPM pools per site
-- [ ] Site templates (Laravel, Next.js, Django, etc.)
 - [ ] Auto-update mechanism
 
 ---

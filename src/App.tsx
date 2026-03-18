@@ -19,12 +19,14 @@ import Troubleshoot from "./components/Troubleshoot";
 import Docker from "./components/Docker";
 import Queues from "./components/Queues";
 import CronJobs from "./components/CronJobs";
+import CloudRun from "./components/CloudRun";
 
 type Page =
   | "dashboard" | "websites" | "dns" | "ssl" | "databases"
   | "languages" | "mail" | "webserver" | "tunnel" | "ai"
   | "search" | "objectstorage" | "backup" | "packages"
-  | "settings" | "troubleshoot" | "docker" | "queues" | "cronjobs";
+  | "settings" | "troubleshoot" | "docker" | "queues" | "cronjobs"
+  | "cloudrun";
 
 interface NavItem {
   id: Page;
@@ -66,6 +68,7 @@ const nav: NavGroup[] = [
     section: "Advanced",
     items: [
       { id: "tunnel", icon: "⇋", label: "Tunnel" },
+      { id: "cloudrun", icon: "☁", label: "Cloud Run" },
       { id: "docker", icon: "⬡", label: "Docker" },
       { id: "queues", icon: "⇶", label: "Queues" },
       { id: "cronjobs", icon: "⏱", label: "Cron Jobs" },
@@ -105,6 +108,7 @@ const pageComponents: Record<Page, React.FC> = {
   docker: Docker,
   queues: Queues,
   cronjobs: CronJobs,
+  cloudrun: CloudRun,
 };
 
 /* ── Onboarding Wizard ──────────────────────────────────── */

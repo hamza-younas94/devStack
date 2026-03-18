@@ -1802,6 +1802,193 @@ fn create_from_template(name: String, template: String, _domain: String) -> CmdR
     run_shell(&cmd)
 }
 
+// ── Google Cloud Run ────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+struct CloudRunService {
+    name: String,
+    region: String,
+    url: String,
+    status: String,
+    last_deployed: String,
+    revision: String,
+}
+
+#[tauri::command]
+fn gcloud_check() -> serde_json::Value {
+    let installed = run_shell("which gcloud >/dev/null 2>&1 && echo yes || echo no").output.trim().to_string();
+    let docker = run_shell("which docker >/dev/null 2>&1 && echo yes || echo no").output.trim().to_string();
+    let project = if installed == "yes" {
+        run_shell("gcloud config get-value project 2>/dev/null").output.trim().to_string()
+    } else { String::new() };
+    let account = if installed == "yes" {
+        run_shell("gcloud config get-value account 2>/dev/null").output.trim().to_string()
+    } else { String::new() };
+    serde_json::json!({
+        "gcloud_installed": installed == "yes",
+        "docker_installed": docker == "yes",
+        "project": project,
+        "account": account,
+    })
+}
+
+#[tauri::command]
+fn gcloud_list_projects() -> Vec<String> {
+    let out = run_shell("gcloud projects list --format='value(projectId)' 2>/dev/null").output;
+    out.trim().lines().filter(|l| !l.is_empty()).map(|l| l.trim().to_string()).collect()
+}
+
+#[tauri::command]
+fn gcloud_set_project(project: String) -> CmdResult {
+    run_shell(&format!("gcloud config set project '{}' 2>&1", project))
+}
+
+#[tauri::command]
+fn cloudrun_list_services(region: String) -> Vec<CloudRunService> {
+    let out = run_shell(&format!(
+        "gcloud run services list --region='{}' --format='csv[no-heading](metadata.name,status.url,status.conditions[0].status,status.traffic[0].revisionName,metadata.creationTimestamp)' 2>/dev/null",
+        region
+    )).output;
+    out.trim().lines().filter(|l| !l.is_empty()).map(|line| {
+        let p: Vec<&str> = line.splitn(5, ',').collect();
+        CloudRunService {
+            name: p.first().unwrap_or(&"").to_string(),
+            region: region.clone(),
+            url: p.get(1).unwrap_or(&"").to_string(),
+            status: if p.get(2).unwrap_or(&"") == &"True" { "Ready".into() } else { "Not Ready".into() },
+            revision: p.get(3).unwrap_or(&"").to_string(),
+            last_deployed: p.get(4).unwrap_or(&"").to_string(),
+        }
+    }).collect()
+}
+
+#[tauri::command]
+fn cloudrun_get_logs(service: String, region: String) -> String {
+    run_shell(&format!(
+        "gcloud run services logs read '{}' --region='{}' --limit=50 2>&1",
+        service, region
+    )).output
+}
+
+#[tauri::command]
+fn cloudrun_generate_dockerfile(site_type: String, site_name: String) -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let dockerfile = match site_type.as_str() {
+        "php" => format!(r#"FROM php:8.3-apache
+COPY . /var/www/html/
+RUN docker-php-ext-install pdo pdo_mysql
+EXPOSE 8080
+ENV APACHE_PORT=8080
+RUN sed -i 's/80/8080/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
+CMD ["apache2-foreground"]
+"#),
+        "node" => format!(r#"FROM node:20-slim
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+EXPOSE 8080
+ENV PORT=8080
+CMD ["node", "index.js"]
+"#),
+        "python" => format!(r#"FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+EXPOSE 8080
+ENV PORT=8080
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+"#),
+        "nextjs" => format!(r#"FROM node:20-slim AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:20-slim
+WORKDIR /app
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+EXPOSE 8080
+ENV PORT=8080
+CMD ["node", "server.js"]
+"#),
+        "laravel" => format!(r#"FROM php:8.3-apache
+RUN docker-php-ext-install pdo pdo_mysql bcmath
+RUN a2enmod rewrite
+COPY . /var/www/html/
+RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+EXPOSE 8080
+RUN sed -i 's/80/8080/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
+ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
+RUN sed -ri 's!/var/www/html!${{APACHE_DOCUMENT_ROOT}}!g' /etc/apache2/sites-available/000-default.conf
+CMD ["apache2-foreground"]
+"#),
+        "django" => format!(r#"FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt gunicorn
+COPY . .
+RUN python manage.py collectstatic --noinput 2>/dev/null || true
+EXPOSE 8080
+ENV PORT=8080
+CMD ["gunicorn", "app.wsgi:application", "--bind", "0.0.0.0:8080"]
+"#),
+        _ => format!(r#"FROM nginx:alpine
+COPY . /usr/share/nginx/html
+EXPOSE 8080
+RUN sed -i 's/listen\s*80;/listen 8080;/g' /etc/nginx/conf.d/default.conf
+CMD ["nginx", "-g", "daemon off;"]
+"#),
+    };
+
+    let path = format!("{}/.devstack/sites/{}/Dockerfile", home, site_name);
+    let _ = std::fs::write(&path, &dockerfile);
+    dockerfile
+}
+
+#[tauri::command]
+fn cloudrun_build_and_deploy(
+    site_name: String,
+    project: String,
+    region: String,
+    service_name: String,
+    env_vars: String,
+) -> CmdResult {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let site_dir = format!("{}/.devstack/sites/{}", home, site_name);
+    let image = format!("gcr.io/{}/{}", project, service_name);
+    let env_flag = if env_vars.is_empty() {
+        String::new()
+    } else {
+        format!(" --set-env-vars='{}'", env_vars)
+    };
+    run_shell(&format!(
+        "cd '{}' && gcloud builds submit --tag '{}' --project '{}' 2>&1 && \
+         gcloud run deploy '{}' --image '{}' --region '{}' --project '{}' --platform managed --port 8080 --allow-unauthenticated{} 2>&1",
+        site_dir, image, project, service_name, image, region, project, env_flag
+    ))
+}
+
+#[tauri::command]
+fn cloudrun_delete_service(service: String, region: String) -> CmdResult {
+    run_shell(&format!(
+        "gcloud run services delete '{}' --region='{}' --quiet 2>&1",
+        service, region
+    ))
+}
+
+#[tauri::command]
+fn cloudrun_set_traffic(service: String, region: String, revision: String, percent: u32) -> CmdResult {
+    run_shell(&format!(
+        "gcloud run services update-traffic '{}' --region='{}' --to-revisions='{}={}' 2>&1",
+        service, region, revision, percent
+    ))
+}
+
 // ── Main ───────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1903,6 +2090,10 @@ pub fn run() {
             get_cron_jobs, add_cron_job, remove_cron_job, get_cron_raw, save_cron_raw,
             // Templates
             create_from_template,
+            // Cloud Run
+            gcloud_check, gcloud_list_projects, gcloud_set_project,
+            cloudrun_list_services, cloudrun_get_logs, cloudrun_generate_dockerfile,
+            cloudrun_build_and_deploy, cloudrun_delete_service, cloudrun_set_traffic,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
