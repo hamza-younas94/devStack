@@ -62,6 +62,7 @@ Monitor all services, system resources, and websites at a glance.
 
 #### Websites
 - Create sites in one click: PHP, Node.js, Python, Static, WordPress
+- **Site templates**: Laravel, WordPress, Next.js, Django, Express, Symfony
 - Auto-generates nginx config, SSL cert, and DNS entry
 - Custom document root, PHP version per site
 - Access/error log viewer per site
@@ -82,7 +83,7 @@ Monitor all services, system resources, and websites at a glance.
 <td>
 
 #### Databases
-- **MySQL** and **PostgreSQL** support
+- **MySQL**, **PostgreSQL**, and **MongoDB** support
 - Create, drop, import (`.sql`), and export databases
 - Edit `my.cnf` / `postgresql.conf` in-app
 - View connection details (host, port, socket)
@@ -136,6 +137,62 @@ Monitor all services, system resources, and websites at a glance.
 - Auto-detects tunnel URL from logs
 
 </td>
+</tr>
+</table>
+
+### DevOps & Containers
+
+<table>
+<tr>
+<td width="33%">
+
+#### Docker
+- Container lifecycle (start, stop, restart, remove)
+- Image management (pull, remove)
+- Container logs viewer
+- Click-to-install Docker
+
+</td>
+<td width="33%">
+
+#### Queues
+- **Redis** queue inspection (peek, flush)
+- **RabbitMQ** queue monitoring
+- Message count + consumer count
+- Click-to-install both
+
+</td>
+<td width="33%">
+
+#### Cron Jobs
+- Visual cron editor with schedule presets
+- Raw crontab editor
+- Add/remove jobs from GUI
+- Common schedule templates
+
+</td>
+</tr>
+<tr>
+<td>
+
+#### Google Cloud Run
+- Deploy sites directly to Cloud Run
+- Auto-generate Dockerfiles (PHP, Node, Python, Laravel, Django, Next.js)
+- GCP project selector + region picker
+- View logs, manage traffic, delete services
+
+</td>
+<td>
+
+#### Site Templates
+- **Laravel** — Full scaffold with Composer
+- **WordPress** — Auto-download + wp-config
+- **Next.js / Express** — npm init + dependencies
+- **Django** — virtualenv + pip install
+- **Symfony** — Composer create-project
+
+</td>
+<td></td>
 </tr>
 </table>
 
@@ -343,6 +400,81 @@ Languages → PHP → Click desired version → nginx reloads automatically
 
 ---
 
+## Rust Backend (Tauri Commands)
+
+The backend is a single Rust file (`src-tauri/src/lib.rs`) with **90+ Tauri commands** organized into modules:
+
+| Module | Commands | Description |
+|--------|----------|-------------|
+| **Dashboard** | `get_system_stats`, `get_dashboard` | CPU, memory, disk stats; service status grid |
+| **Websites** | `get_sites`, `create_site`, `edit_site`, `delete_site`, `get_site_logs` | Full CRUD with nginx config + SSL generation |
+| **Templates** | `create_from_template` | Scaffold Laravel, WordPress, Next.js, Django, Express, Symfony, Static |
+| **Web Server** | `reload_nginx`, `start_services`, `stop_services`, `restart_service`, `toggle_service` | Per-service start/stop controls |
+| **Databases** | `list_databases`, `create_database`, `drop_database`, `import_database`, `export_database` | MySQL, PostgreSQL, MongoDB |
+| **Languages** | `get_php_versions`, `switch_php`, `get_installed_versions`, `get_available_versions` | Multi-version PHP, Node, Python, Go, Ruby, Java |
+| **DNS** | `get_dns_entries`, `get_hosts_entries`, `save_hosts_entries`, `add_host_entry`, `remove_host_entry` | dnsmasq + /etc/hosts management |
+| **SSL** | `get_ssl_certs`, `create_ssl_cert`, `create_ssl_cert_advanced`, `delete_ssl_cert` | mkcert CA + cert generation |
+| **Tunnels** | `start_tunnel`, `stop_tunnel`, `get_tunnel_status` | Cloudflare + ngrok tunnel management |
+| **Packages** | `get_packages`, `install_package`, `uninstall_package`, `check_outdated_packages`, `upgrade_package` | Homebrew package management |
+| **Docker** | `get_docker_containers`, `get_docker_images`, `docker_action`, `docker_pull_image`, `get_docker_logs` | Container + image lifecycle |
+| **Queues** | `get_redis_queues`, `get_rabbitmq_queues`, `redis_queue_action` | Queue inspection + flush |
+| **Cron** | `get_cron_jobs`, `add_cron_job`, `remove_cron_job`, `get_cron_raw`, `save_cron_raw` | Visual + raw crontab editing |
+| **Cloud Run** | `gcloud_check`, `gcloud_list_projects`, `cloudrun_list_services`, `cloudrun_build_and_deploy`, `cloudrun_generate_dockerfile` | GCP Cloud Run deployment |
+| **AI** | `get_ollama_models`, `pull_ollama_model`, `delete_ollama_model` | Ollama LLM management |
+| **Mail** | `get_mail_status`, `toggle_mail` | Mailpit service control |
+| **Backup** | `get_backups`, `create_backup`, `restore_backup`, `delete_backup`, `get_backup_schedule`, `set_backup_schedule` | Backup/restore + scheduling |
+| **Config** | `read_config_file`, `write_config_file`, `get_config_paths` | In-app config editing for any service |
+| **Settings** | `load_settings`, `save_settings`, `get_custom_tlds`, `add_custom_tld` | App preferences + custom TLDs |
+| **System** | `check_requirements`, `check_onboarding_status`, `run_onboarding_step`, `run_troubleshoot` | Setup wizard + diagnostics |
+
+### Architecture
+
+```
+Frontend (React)                    Backend (Rust)
+┌────────────────┐                 ┌────────────────────┐
+│  Component.tsx │ ── invoke() ──→ │ #[tauri::command]   │
+│                │                 │ fn my_command()     │
+│  await invoke( │                 │   → run_shell(cmd)  │
+│    "command",  │                 │   → run_devstack()  │
+│    { args }    │ ←── Result ──── │   → CmdResult       │
+│  )             │                 │                     │
+└────────────────┘                 └────────────────────┘
+```
+
+- **`run_shell(cmd)`** — Executes shell commands with Homebrew-aware `PATH`
+- **`run_devstack(args)`** — Calls the DevStack CLI binary at `~/.devstack/devstack`
+- **`CmdResult`** — Standard return type: `{ success, output, error }`
+
+### DevStack CLI
+
+DevStack includes a CLI binary (`~/.devstack/devstack`) used by both the GUI and terminal:
+
+```bash
+# Service management
+devstack start              # Start all services
+devstack stop               # Stop all services
+devstack status             # Show service status
+
+# PHP version switching
+devstack php switch 8.3     # Switch active PHP version
+devstack php list           # List installed PHP versions
+
+# Site management
+devstack site create myapp  # Create a new site
+devstack site delete myapp  # Delete a site
+devstack site list          # List all sites
+
+# DNS
+devstack dns setup          # Configure dnsmasq for .test domains
+devstack dns status         # Check DNS resolution
+
+# SSL
+devstack ssl create myapp   # Generate SSL cert for myapp.test
+devstack ssl ca install     # Install local CA
+```
+
+---
+
 ## Project Structure
 
 ```
@@ -366,12 +498,16 @@ devstack-app/
 │       ├── Search.tsx           # Meilisearch service
 │       ├── ObjectStorage.tsx    # MinIO service
 │       ├── Packages.tsx         # Homebrew package management
+│       ├── Docker.tsx           # Docker container/image management
+│       ├── Queues.tsx           # Redis + RabbitMQ queues
+│       ├── CronJobs.tsx         # Cron job visual + raw editor
+│       ├── CloudRun.tsx         # Google Cloud Run deployment
 │       ├── Backup.tsx           # Backup/restore
 │       ├── Settings.tsx         # App preferences
 │       └── Troubleshoot.tsx     # System diagnostics
 ├── src-tauri/                   # Rust backend
 │   ├── src/
-│   │   ├── lib.rs              # 65+ Tauri commands (~1600 lines)
+│   │   ├── lib.rs              # 90+ Tauri commands (~2100 lines)
 │   │   └── main.rs             # App entry
 │   ├── Cargo.toml
 │   └── tauri.conf.json
@@ -391,7 +527,10 @@ devstack-app/
 | PHP | `php` | PHP-FPM (multi-version) |
 | MySQL | `mysql` | Relational database |
 | PostgreSQL | `postgresql@17` | Relational database |
+| MongoDB | `mongodb-community` | Document database |
 | Redis | `redis` | In-memory cache / store |
+| RabbitMQ | `rabbitmq` | Message queue broker |
+| Docker | `docker` | Container runtime |
 | Node.js | `node` | JavaScript runtime |
 | Python | `python` | Python runtime |
 | Go | `go` | Go runtime |
