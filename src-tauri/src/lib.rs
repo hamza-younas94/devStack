@@ -1989,6 +1989,339 @@ fn cloudrun_set_traffic(service: String, region: String, revision: String, perce
     ))
 }
 
+// ── Database GUI Tools ─────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct DbGuiStatus {
+    pub name: String,
+    pub installed: bool,
+    pub running: bool,
+    pub url: String,
+    pub port: u16,
+}
+
+#[tauri::command]
+fn get_db_gui_status() -> Vec<DbGuiStatus> {
+    let mut tools = Vec::new();
+
+    // phpMyAdmin via brew
+    let pma_installed = run_shell("test -d /opt/homebrew/share/phpmyadmin && echo yes || echo no").output.trim() == "yes";
+    let pma_running = run_shell("lsof -i :8080 -sTCP:LISTEN 2>/dev/null | grep -q php && echo yes || echo no").output.trim() == "yes";
+    tools.push(DbGuiStatus {
+        name: "phpMyAdmin".into(), installed: pma_installed, running: pma_running,
+        url: "http://localhost:8080".into(), port: 8080,
+    });
+
+    // Adminer
+    let adminer_path = format!("{}/tools/adminer", devstack_home());
+    let adminer_installed = run_shell(&format!("test -f {}/adminer.php && echo yes || echo no", adminer_path)).output.trim() == "yes";
+    let adminer_running = run_shell("lsof -i :8081 -sTCP:LISTEN 2>/dev/null | grep -q php && echo yes || echo no").output.trim() == "yes";
+    tools.push(DbGuiStatus {
+        name: "Adminer".into(), installed: adminer_installed, running: adminer_running,
+        url: "http://localhost:8081".into(), port: 8081,
+    });
+
+    tools
+}
+
+#[tauri::command]
+fn install_db_gui(tool: String) -> CmdResult {
+    match tool.as_str() {
+        "phpmyadmin" => {
+            run_shell("brew install phpmyadmin 2>&1")
+        }
+        "adminer" => {
+            let path = format!("{}/tools/adminer", devstack_home());
+            run_shell(&format!(
+                "mkdir -p '{}' && curl -sL 'https://github.com/vrana/adminer/releases/latest/download/adminer.php' -o '{}/adminer.php' 2>&1 && echo 'Adminer installed'",
+                path, path
+            ))
+        }
+        _ => CmdResult { success: false, output: String::new(), error: "Unknown tool".into() },
+    }
+}
+
+#[tauri::command]
+fn start_db_gui(tool: String, port: u16) -> CmdResult {
+    match tool.as_str() {
+        "phpmyadmin" => {
+            run_shell(&format!(
+                "cd /opt/homebrew/share/phpmyadmin && php -S 0.0.0.0:{} > /dev/null 2>&1 &",
+                port
+            ))
+        }
+        "adminer" => {
+            let path = format!("{}/tools/adminer", devstack_home());
+            run_shell(&format!(
+                "cd '{}' && php -S 0.0.0.0:{} > /dev/null 2>&1 &",
+                path, port
+            ))
+        }
+        _ => CmdResult { success: false, output: String::new(), error: "Unknown tool".into() },
+    }
+}
+
+#[tauri::command]
+fn stop_db_gui(port: u16) -> CmdResult {
+    run_shell(&format!("lsof -ti :{} | xargs kill -9 2>/dev/null; echo 'Stopped'", port))
+}
+
+// ── PHP Extensions ────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct PhpExtension {
+    pub name: String,
+    pub enabled: bool,
+    pub version: String,
+}
+
+#[tauri::command]
+fn get_php_extensions() -> Vec<PhpExtension> {
+    let loaded = run_shell("php -m 2>/dev/null").output;
+    let ini_dir = run_shell("php --ini 2>/dev/null | grep 'Scan for additional' | awk -F: '{print $2}'").output.trim().to_string();
+
+    let all_exts = run_shell(&format!(
+        "ls '{}'/ext-*.ini '{}'/../conf.d/ext-*.ini /opt/homebrew/etc/php/*/conf.d/ext-*.ini 2>/dev/null | sed 's/.*ext-//' | sed 's/.ini//' | sort -u",
+        ini_dir, ini_dir
+    )).output;
+
+    let mut extensions = Vec::new();
+    // Built-in well-known extensions
+    let common = ["bcmath", "calendar", "ctype", "curl", "dom", "exif", "fileinfo",
+        "ftp", "gd", "gettext", "iconv", "intl", "json", "mbstring", "mysqli",
+        "mysqlnd", "opcache", "openssl", "pcntl", "pdo", "pdo_mysql", "pdo_pgsql",
+        "pdo_sqlite", "phar", "posix", "readline", "redis", "session", "shmop",
+        "simplexml", "soap", "sockets", "sodium", "sqlite3", "tokenizer",
+        "xml", "xmlreader", "xmlwriter", "xsl", "zip", "zlib", "imagick", "xdebug", "apcu", "memcached"];
+
+    for ext in common {
+        let is_loaded = loaded.lines().any(|l| l.trim().eq_ignore_ascii_case(ext));
+        extensions.push(PhpExtension {
+            name: ext.to_string(),
+            enabled: is_loaded,
+            version: String::new(),
+        });
+    }
+
+    // Add any from ini scan not already in the list
+    for ext in all_exts.lines() {
+        let ext = ext.trim();
+        if !ext.is_empty() && !extensions.iter().any(|e| e.name == ext) {
+            let is_loaded = loaded.lines().any(|l| l.trim().eq_ignore_ascii_case(ext));
+            extensions.push(PhpExtension {
+                name: ext.to_string(),
+                enabled: is_loaded,
+                version: String::new(),
+            });
+        }
+    }
+
+    extensions.sort_by(|a, b| a.name.cmp(&b.name));
+    extensions
+}
+
+#[tauri::command]
+fn toggle_php_extension(name: String, enable: bool) -> CmdResult {
+    if enable {
+        // Try pecl install first, then enable via ini
+        let pecl_result = run_shell(&format!("pecl install {} 2>&1 || true", name));
+        let ini_dir = run_shell("php --ini 2>/dev/null | grep 'Scan for additional' | awk -F: '{print $2}'").output.trim().to_string();
+        let ini_file = format!("{}/ext-{}.ini", ini_dir, name);
+        let ext_type = if name == "opcache" || name == "xdebug" { "zend_extension" } else { "extension" };
+        run_shell(&format!(
+            "echo '{}={}' > '{}' 2>&1 && echo 'Extension {} enabled'",
+            ext_type, name, ini_file, name
+        ));
+        if !pecl_result.success {
+            // If pecl failed, just try the ini approach
+            CmdResult { success: true, output: format!("Extension {} enabled (ini created)", name), error: String::new() }
+        } else {
+            pecl_result
+        }
+    } else {
+        // Disable by removing/renaming the ini file
+        let ini_dir = run_shell("php --ini 2>/dev/null | grep 'Scan for additional' | awk -F: '{print $2}'").output.trim().to_string();
+        run_shell(&format!(
+            "rm -f '{}/ext-{}.ini' '{}/ext-{}.ini.disabled' 2>/dev/null; \
+             find /opt/homebrew/etc/php -name 'ext-{}.ini' -exec rm {{}} \\; 2>/dev/null; \
+             echo 'Extension {} disabled'",
+            ini_dir, name, ini_dir, name, name, name
+        ))
+    }
+}
+
+// ── Dev Tools ─────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct DevTool {
+    pub name: String,
+    pub display_name: String,
+    pub installed: bool,
+    pub version: String,
+    pub category: String,
+}
+
+#[tauri::command]
+fn get_dev_tools() -> Vec<DevTool> {
+    let mut tools = Vec::new();
+
+    let checks: Vec<(&str, &str, &str, &str)> = vec![
+        ("composer", "Composer", "composer --version 2>/dev/null | awk '{print $3}'", "PHP"),
+        ("npm", "npm", "npm --version 2>/dev/null", "Node.js"),
+        ("pnpm", "pnpm", "pnpm --version 2>/dev/null", "Node.js"),
+        ("yarn", "Yarn", "yarn --version 2>/dev/null", "Node.js"),
+        ("bun", "Bun", "bun --version 2>/dev/null", "Node.js"),
+        ("pip3", "pip", "pip3 --version 2>/dev/null | awk '{print $2}'", "Python"),
+        ("pipenv", "Pipenv", "pipenv --version 2>/dev/null | awk '{print $3}'", "Python"),
+        ("poetry", "Poetry", "poetry --version 2>/dev/null | awk '{print $3}'", "Python"),
+        ("cargo", "Cargo", "cargo --version 2>/dev/null | awk '{print $2}'", "Rust"),
+        ("go", "Go", "go version 2>/dev/null | awk '{print $3}' | sed 's/go//'", "Go"),
+        ("ruby", "Ruby", "ruby --version 2>/dev/null | awk '{print $2}'", "Ruby"),
+        ("gem", "RubyGems", "gem --version 2>/dev/null", "Ruby"),
+        ("java", "Java", "java --version 2>/dev/null | head -1 | awk '{print $2}'", "Java"),
+        ("maven", "Maven", "mvn --version 2>/dev/null | head -1 | awk '{print $3}'", "Java"),
+        ("gradle", "Gradle", "gradle --version 2>/dev/null | grep 'Gradle' | awk '{print $2}'", "Java"),
+        ("git", "Git", "git --version 2>/dev/null | awk '{print $3}'", "Version Control"),
+        ("docker", "Docker", "docker --version 2>/dev/null | awk '{print $3}' | tr -d ','", "Container"),
+        ("docker-compose", "Docker Compose", "docker compose version 2>/dev/null | awk '{print $4}'", "Container"),
+        ("kubectl", "kubectl", "kubectl version --client --short 2>/dev/null | awk '{print $3}'", "Container"),
+    ];
+
+    // Batch all checks into a single shell call for performance
+    let script = checks.iter().map(|(cmd, _, version_cmd, _)| {
+        format!("v=$({} 2>/dev/null); if [ -n \"$v\" ]; then echo \"{}|yes|$v\"; else echo \"{}|no|\"; fi", version_cmd, cmd, cmd)
+    }).collect::<Vec<_>>().join("\n");
+
+    let result = run_shell(&script);
+    let lines: Vec<&str> = result.output.lines().collect();
+
+    for (i, (name, display, _, category)) in checks.iter().enumerate() {
+        if let Some(line) = lines.get(i) {
+            let parts: Vec<&str> = line.splitn(3, '|').collect();
+            let installed = parts.get(1).map(|s| *s == "yes").unwrap_or(false);
+            let version = parts.get(2).map(|s| s.trim().to_string()).unwrap_or_default();
+            tools.push(DevTool {
+                name: name.to_string(),
+                display_name: display.to_string(),
+                installed,
+                version,
+                category: category.to_string(),
+            });
+        }
+    }
+
+    tools
+}
+
+#[tauri::command]
+fn install_dev_tool(name: String) -> CmdResult {
+    match name.as_str() {
+        "composer" => run_shell("brew install composer 2>&1"),
+        "pnpm" => run_shell("npm install -g pnpm 2>&1"),
+        "yarn" => run_shell("npm install -g yarn 2>&1"),
+        "bun" => run_shell("brew install oven-sh/bun/bun 2>&1"),
+        "pipenv" => run_shell("pip3 install pipenv 2>&1"),
+        "poetry" => run_shell("pip3 install poetry 2>&1"),
+        "maven" => run_shell("brew install maven 2>&1"),
+        "gradle" => run_shell("brew install gradle 2>&1"),
+        "docker-compose" => run_shell("brew install docker-compose 2>&1"),
+        "kubectl" => run_shell("brew install kubectl 2>&1"),
+        _ => CmdResult { success: false, output: String::new(), error: format!("Cannot install {} from DevStack", name) },
+    }
+}
+
+// ── Caddy ─────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn get_caddy_status() -> CmdResult {
+    run_shell("brew services info caddy --json 2>/dev/null || echo '{}'")
+}
+
+#[tauri::command]
+fn caddy_action(action: String) -> CmdResult {
+    match action.as_str() {
+        "start" => run_shell("brew services start caddy 2>&1"),
+        "stop" => run_shell("brew services stop caddy 2>&1"),
+        "restart" => run_shell("brew services restart caddy 2>&1"),
+        "reload" => run_shell("caddy reload --config /opt/homebrew/etc/Caddyfile 2>&1"),
+        "install" => run_shell("brew install caddy 2>&1"),
+        _ => CmdResult { success: false, output: String::new(), error: "Unknown action".into() },
+    }
+}
+
+#[tauri::command]
+fn get_caddyfile() -> CmdResult {
+    run_shell("cat /opt/homebrew/etc/Caddyfile 2>/dev/null || echo '# Caddyfile not found'")
+}
+
+#[tauri::command]
+fn save_caddyfile(content: String) -> CmdResult {
+    // Write to temp file then move (avoids issues with shell escaping)
+    let tmp = format!("{}/tmp_caddyfile", devstack_home());
+    std::fs::write(&tmp, &content).ok();
+    run_shell(&format!("mv '{}' /opt/homebrew/etc/Caddyfile 2>&1 && caddy fmt --overwrite /opt/homebrew/etc/Caddyfile 2>&1 && echo 'Caddyfile saved'", tmp))
+}
+
+// ── Redirect Rules ────────────────────────────────────────────────
+
+#[derive(Serialize, Deserialize)]
+pub struct RedirectRule {
+    pub from: String,
+    pub to: String,
+    pub code: u16,   // 301 or 302
+    pub enabled: bool,
+}
+
+#[tauri::command]
+fn get_site_redirects(domain: String) -> Vec<RedirectRule> {
+    let redirect_file = format!("{}/config/nginx/{}.redirects", devstack_home(), domain);
+    let content = run_shell(&format!("cat '{}' 2>/dev/null", redirect_file)).output;
+    let mut rules = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') { continue; }
+        // Format: "from|to|code|enabled"
+        let parts: Vec<&str> = line.splitn(4, '|').collect();
+        if parts.len() == 4 {
+            rules.push(RedirectRule {
+                from: parts[0].to_string(),
+                to: parts[1].to_string(),
+                code: parts[2].parse().unwrap_or(301),
+                enabled: parts[3] == "1",
+            });
+        }
+    }
+    rules
+}
+
+#[tauri::command]
+fn save_site_redirects(domain: String, rules: Vec<RedirectRule>) -> CmdResult {
+    let redirect_file = format!("{}/config/nginx/{}.redirects", devstack_home(), domain);
+    let content: Vec<String> = rules.iter().map(|r| {
+        format!("{}|{}|{}|{}", r.from, r.to, r.code, if r.enabled { "1" } else { "0" })
+    }).collect();
+    let data = content.join("\n");
+    std::fs::create_dir_all(format!("{}/config/nginx", devstack_home())).ok();
+    match std::fs::write(&redirect_file, &data) {
+        Ok(_) => {
+            // Generate nginx redirect snippet
+            let nginx_snippet = format!("{}/config/nginx/{}.redirect.conf", devstack_home(), domain);
+            let mut nginx_rules = String::new();
+            for r in &rules {
+                if r.enabled {
+                    nginx_rules.push_str(&format!(
+                        "    if ($request_uri = \"{}\") {{\n        return {} \"{}\";\n    }}\n",
+                        r.from, r.code, r.to
+                    ));
+                }
+            }
+            std::fs::write(&nginx_snippet, &nginx_rules).ok();
+            CmdResult { success: true, output: "Redirects saved. Reload nginx to apply.".into(), error: String::new() }
+        }
+        Err(e) => CmdResult { success: false, output: String::new(), error: e.to_string() },
+    }
+}
+
 // ── Main ───────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2094,6 +2427,16 @@ pub fn run() {
             gcloud_check, gcloud_list_projects, gcloud_set_project,
             cloudrun_list_services, cloudrun_get_logs, cloudrun_generate_dockerfile,
             cloudrun_build_and_deploy, cloudrun_delete_service, cloudrun_set_traffic,
+            // DB GUI Tools
+            get_db_gui_status, install_db_gui, start_db_gui, stop_db_gui,
+            // PHP Extensions
+            get_php_extensions, toggle_php_extension,
+            // Dev Tools
+            get_dev_tools, install_dev_tool,
+            // Caddy
+            get_caddy_status, caddy_action, get_caddyfile, save_caddyfile,
+            // Redirects
+            get_site_redirects, save_site_redirects,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
