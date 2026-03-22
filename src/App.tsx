@@ -62,7 +62,7 @@ const nav: NavGroup[] = [
       { id: "databases", icon: "⊡", label: "Databases" },
       { id: "languages", icon: "▸", label: "Languages" },
       { id: "mail", icon: "✉", label: "Mail" },
-      { id: "webserver", icon: "⚙", label: "Web Server" },
+      { id: "webserver", icon: "⚙", label: "Web Servers" },
     ],
   },
   {

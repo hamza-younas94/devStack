@@ -2322,6 +2322,156 @@ fn save_site_redirects(domain: String, rules: Vec<RedirectRule>) -> CmdResult {
     }
 }
 
+// ── Apache ─────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn get_apache_status() -> CmdResult {
+    run_shell("brew services info httpd --json 2>/dev/null || echo '{}'")
+}
+
+#[tauri::command]
+fn apache_action(action: String) -> CmdResult {
+    match action.as_str() {
+        "start" => run_shell("brew services start httpd 2>&1"),
+        "stop" => run_shell("brew services stop httpd 2>&1"),
+        "restart" => run_shell("brew services restart httpd 2>&1"),
+        "install" => run_shell("brew install httpd 2>&1"),
+        _ => CmdResult { success: false, output: String::new(), error: "Unknown action".into() },
+    }
+}
+
+#[tauri::command]
+fn get_httpd_conf() -> CmdResult {
+    run_shell("cat /opt/homebrew/etc/httpd/httpd.conf 2>/dev/null || echo '# httpd.conf not found'")
+}
+
+#[tauri::command]
+fn save_httpd_conf(content: String) -> CmdResult {
+    let tmp = format!("{}/tmp_httpd_conf", devstack_home());
+    std::fs::write(&tmp, &content).ok();
+    run_shell(&format!("mv '{}' /opt/homebrew/etc/httpd/httpd.conf 2>&1 && echo 'httpd.conf saved'", tmp))
+}
+
+// ── Let's Encrypt / ACME ──────────────────────────────────────────
+
+#[tauri::command]
+fn acme_check() -> CmdResult {
+    run_shell("which certbot > /dev/null 2>&1 && certbot --version 2>&1 || echo 'not installed'")
+}
+
+#[tauri::command]
+fn acme_install() -> CmdResult {
+    run_shell("brew install certbot 2>&1")
+}
+
+#[tauri::command]
+fn acme_issue_cert(domain: String, email: String) -> CmdResult {
+    run_shell(&format!(
+        "sudo certbot certonly --standalone -d '{}' --non-interactive --agree-tos -m '{}' 2>&1",
+        domain, email
+    ))
+}
+
+#[tauri::command]
+fn acme_list_certs() -> CmdResult {
+    run_shell("sudo certbot certificates 2>&1")
+}
+
+#[tauri::command]
+fn acme_renew() -> CmdResult {
+    run_shell("sudo certbot renew 2>&1")
+}
+
+#[tauri::command]
+fn acme_revoke_cert(domain: String) -> CmdResult {
+    run_shell(&format!("sudo certbot revoke --cert-name '{}' --non-interactive 2>&1", domain))
+}
+
+// ── Typesense ─────────────────────────────────────────────────────
+
+#[tauri::command]
+fn typesense_status() -> CmdResult {
+    run_shell("brew services info typesense-server --json 2>/dev/null || echo '{}'")
+}
+
+#[tauri::command]
+fn typesense_action(action: String) -> CmdResult {
+    match action.as_str() {
+        "start" => run_shell("brew services start typesense-server 2>&1"),
+        "stop" => run_shell("brew services stop typesense-server 2>&1"),
+        "restart" => run_shell("brew services restart typesense-server 2>&1"),
+        "install" => run_shell("brew install typesense/tap/typesense-server 2>&1"),
+        _ => CmdResult { success: false, output: String::new(), error: "Unknown action".into() },
+    }
+}
+
+// ── FRP Tunnel ────────────────────────────────────────────────────
+
+#[tauri::command]
+fn frp_check() -> bool {
+    run_shell("which frpc > /dev/null 2>&1 && echo yes || echo no").output.trim() == "yes"
+}
+
+#[tauri::command]
+fn frp_install() -> CmdResult {
+    run_shell("brew install frp 2>&1")
+}
+
+#[tauri::command]
+fn frp_start(server: String, server_port: String, local_port: String, remote_port: String) -> CmdResult {
+    let config = format!(
+        "[common]\nserver_addr = {}\nserver_port = {}\n\n[web]\ntype = tcp\nlocal_port = {}\nremote_port = {}\n",
+        server, server_port, local_port, remote_port
+    );
+    let config_path = format!("{}/frpc.ini", devstack_home());
+    std::fs::write(&config_path, &config).ok();
+    run_shell(&format!("frpc -c '{}' > /dev/null 2>&1 &", config_path))
+}
+
+#[tauri::command]
+fn frp_stop() -> CmdResult {
+    run_shell("pkill -f 'frpc' 2>/dev/null; echo 'FRP stopped'")
+}
+
+// ── Website Grouping ──────────────────────────────────────────────
+
+#[tauri::command]
+fn get_site_groups() -> Vec<(String, Vec<String>)> {
+    let groups_file = format!("{}/config/site-groups.json", devstack_home());
+    let content = std::fs::read_to_string(&groups_file).unwrap_or_else(|_| "{}".to_string());
+    let map: std::collections::HashMap<String, Vec<String>> = serde_json::from_str(&content).unwrap_or_default();
+    let mut groups: Vec<(String, Vec<String>)> = map.into_iter().collect();
+    groups.sort_by(|a, b| a.0.cmp(&b.0));
+    groups
+}
+
+#[tauri::command]
+fn save_site_groups(groups: std::collections::HashMap<String, Vec<String>>) -> CmdResult {
+    let groups_file = format!("{}/config/site-groups.json", devstack_home());
+    std::fs::create_dir_all(format!("{}/config", devstack_home())).ok();
+    match serde_json::to_string_pretty(&groups) {
+        Ok(json) => {
+            match std::fs::write(&groups_file, &json) {
+                Ok(_) => CmdResult { success: true, output: "Groups saved".into(), error: String::new() },
+                Err(e) => CmdResult { success: false, output: String::new(), error: e.to_string() },
+            }
+        }
+        Err(e) => CmdResult { success: false, output: String::new(), error: e.to_string() },
+    }
+}
+
+// ── Auto Update ───────────────────────────────────────────────────
+
+#[tauri::command]
+fn check_for_updates() -> CmdResult {
+    run_shell("curl -sL 'https://api.github.com/repos/hamza-younas94/devStack/releases/latest' 2>&1 | grep '\"tag_name\"' | head -1 | sed 's/.*: \"//;s/\".*//'")
+}
+
+#[tauri::command]
+fn get_current_version() -> String {
+    "0.1.0".to_string()
+}
+
 // ── Main ───────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2437,6 +2587,18 @@ pub fn run() {
             get_caddy_status, caddy_action, get_caddyfile, save_caddyfile,
             // Redirects
             get_site_redirects, save_site_redirects,
+            // Apache
+            get_apache_status, apache_action, get_httpd_conf, save_httpd_conf,
+            // ACME / Let's Encrypt
+            acme_check, acme_install, acme_issue_cert, acme_list_certs, acme_renew, acme_revoke_cert,
+            // Typesense
+            typesense_status, typesense_action,
+            // FRP
+            frp_check, frp_install, frp_start, frp_stop,
+            // Website Groups
+            get_site_groups, save_site_groups,
+            // Auto Update
+            check_for_updates, get_current_version,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

@@ -26,6 +26,13 @@ interface CmdResult {
   error: string;
 }
 
+interface RedirectRule {
+  from: string;
+  to: string;
+  code: number;
+  enabled: boolean;
+}
+
 interface Requirements {
   nginx: boolean;
   php_fpm: boolean;
@@ -39,7 +46,7 @@ interface Requirements {
   ssl_ca: boolean;
 }
 
-type Tab = "general" | "runtime" | "database" | "cors" | "logs" | "advanced";
+type Tab = "general" | "runtime" | "database" | "cors" | "logs" | "redirects" | "advanced";
 
 type WebProtocol = "both" | "https" | "http";
 type SslMethod = "devstack" | "custom";
@@ -101,6 +108,7 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "database", label: "Database" },
   { id: "cors", label: "CORS" },
   { id: "logs", label: "Logs" },
+  { id: "redirects", label: "Redirects" },
   { id: "advanced", label: "Advanced" },
 ];
 
@@ -117,6 +125,8 @@ export default function Websites() {
   const [form, setForm] = useState({ ...defaultForm });
   const [logs, setLogs] = useState("");
   const [logType, setLogType] = useState<"error" | "access">("error");
+  const [redirects, setRedirects] = useState<RedirectRule[]>([]);
+  const [redirectLoading, setRedirectLoading] = useState(false);
 
   const site = sites.find((s) => s.name === selected) || null;
 
@@ -324,6 +334,142 @@ export default function Websites() {
   useEffect(() => {
     if (tab === "logs" && site) fetchLogs();
   }, [tab, selected]);
+
+  // ── Redirects ──────────────────────────────────
+
+  const fetchRedirects = async () => {
+    if (!site) return;
+    setRedirectLoading(true);
+    try {
+      const rules = await invoke<RedirectRule[]>("get_site_redirects", { domain: site.domain });
+      setRedirects(rules);
+    } catch {
+      setRedirects([]);
+    } finally {
+      setRedirectLoading(false);
+    }
+  };
+
+  const saveRedirects = async () => {
+    if (!site) return;
+    setRedirectLoading(true);
+    try {
+      const result = await invoke<CmdResult>("save_site_redirects", { domain: site.domain, rules: redirects });
+      if (result.success) {
+        toast("Redirect rules saved", "success");
+      } else {
+        toast(result.error || "Failed to save redirects", "error");
+      }
+    } catch (e: any) {
+      toast(e.toString(), "error");
+    } finally {
+      setRedirectLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tab === "redirects" && site) fetchRedirects();
+  }, [tab, selected]);
+
+  const addRedirectRule = () => {
+    setRedirects([...redirects, { from: "", to: "", code: 301, enabled: true }]);
+  };
+
+  const updateRedirect = (index: number, field: keyof RedirectRule, value: string | number | boolean) => {
+    const updated = redirects.map((r, i) => (i === index ? { ...r, [field]: value } : r));
+    setRedirects(updated);
+  };
+
+  const removeRedirect = (index: number) => {
+    setRedirects(redirects.filter((_, i) => i !== index));
+  };
+
+  const renderRedirectsTab = () => (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div className="card-title">Redirect Rules</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-sm" onClick={addRedirectRule}>+ Add Rule</button>
+          <button className="btn btn-sm btn-primary" onClick={saveRedirects} disabled={redirectLoading}>
+            {redirectLoading ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+
+      {redirects.length === 0 ? (
+        <div className="text-dim" style={{ padding: "24px 0", textAlign: "center" }}>
+          No redirect rules configured. Click "+ Add Rule" to create one.
+        </div>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ textAlign: "left", borderBottom: "1px solid var(--border)" }}>
+              <th style={{ padding: "8px 8px 8px 0" }}>From Path</th>
+              <th style={{ padding: 8 }}>To URL</th>
+              <th style={{ padding: 8, width: 90 }}>Code</th>
+              <th style={{ padding: 8, width: 70, textAlign: "center" }}>Enabled</th>
+              <th style={{ padding: 8, width: 60 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {redirects.map((rule, i) => (
+              <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
+                <td style={{ padding: "6px 8px 6px 0" }}>
+                  <input
+                    className="form-input"
+                    style={{ width: "100%", fontSize: 12 }}
+                    placeholder="/old-path"
+                    value={rule.from}
+                    onChange={(e) => updateRedirect(i, "from", e.target.value)}
+                  />
+                </td>
+                <td style={{ padding: 6 }}>
+                  <input
+                    className="form-input"
+                    style={{ width: "100%", fontSize: 12 }}
+                    placeholder="https://example.com/new-path"
+                    value={rule.to}
+                    onChange={(e) => updateRedirect(i, "to", e.target.value)}
+                  />
+                </td>
+                <td style={{ padding: 6 }}>
+                  <select
+                    className="form-select"
+                    style={{ width: "100%", fontSize: 12 }}
+                    value={rule.code}
+                    onChange={(e) => updateRedirect(i, "code", parseInt(e.target.value))}
+                  >
+                    <option value={301}>301</option>
+                    <option value={302}>302</option>
+                  </select>
+                </td>
+                <td style={{ padding: 6, textAlign: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={rule.enabled}
+                    onChange={(e) => updateRedirect(i, "enabled", e.target.checked)}
+                  />
+                </td>
+                <td style={{ padding: 6, textAlign: "center" }}>
+                  <button
+                    className="btn btn-sm"
+                    style={{ color: "var(--danger)", fontSize: 11 }}
+                    onClick={() => removeRedirect(i)}
+                  >
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div className="text-dim" style={{ fontSize: 12, marginTop: 12 }}>
+        Reload nginx after saving to apply changes.
+      </div>
+    </div>
+  );
 
   // ── Requirements bar items ─────────────────────
 
@@ -889,6 +1035,9 @@ export default function Websites() {
                 <pre className="log-viewer">{logs || "No logs available"}</pre>
               </div>
             )}
+
+            {/* ── Tab: Redirects ────────────────── */}
+            {tab === "redirects" && renderRedirectsTab()}
 
             {/* ── Tab: Advanced ──────────────────── */}
             {tab === "advanced" && (

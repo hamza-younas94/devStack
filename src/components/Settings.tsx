@@ -28,8 +28,11 @@ export default function Settings() {
   const [tlds, setTlds] = useState<string[]>([]);
   const [newTld, setNewTld] = useState("");
   const [addingTld, setAddingTld] = useState(false);
-  const [tab, setTab] = useState<"general" | "network" | "advanced" | "about">("general");
+  const [tab, setTab] = useState<"general" | "network" | "advanced" | "updates" | "about">("general");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [updateCheck, setUpdateCheck] = useState<{ checking: boolean; latest: string; current: string }>({
+    checking: false, latest: "", current: "",
+  });
 
   // Load settings on mount
   useEffect(() => {
@@ -103,6 +106,24 @@ export default function Settings() {
     setAddingTld(false);
   };
 
+  const checkUpdates = async () => {
+    setUpdateCheck((prev) => ({ ...prev, checking: true }));
+    try {
+      const current = await invoke<string>("get_current_version");
+      const result = await invoke<CmdResult>("check_for_updates");
+      const latest = result.success ? result.output.trim() : "";
+      setUpdateCheck({ checking: false, latest, current });
+      if (latest && latest !== current && latest !== `v${current}`) {
+        toast(`New version available: ${latest}`, "info");
+      } else {
+        toast("You're on the latest version", "success");
+      }
+    } catch {
+      toast("Failed to check for updates", "error");
+      setUpdateCheck((prev) => ({ ...prev, checking: false }));
+    }
+  };
+
   const resetAll = async () => {
     if (!confirm("This will stop all services and reset DevStack configuration. Continue?")) return;
     try {
@@ -124,7 +145,7 @@ export default function Settings() {
 
       <div className="page-body">
         <div className="tabs">
-          {(["general", "network", "advanced", "about"] as const).map((t) => (
+          {(["general", "network", "advanced", "updates", "about"] as const).map((t) => (
             <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
               {t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
@@ -312,6 +333,63 @@ export default function Settings() {
                     <div className="settings-desc">Stop all running DevStack services immediately</div>
                   </div>
                   <button className="btn btn-danger" onClick={resetAll}>Stop All</button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {tab === "updates" && (
+          <>
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">Software Updates</div>
+                <button className="btn btn-primary" onClick={checkUpdates} disabled={updateCheck.checking}>
+                  {updateCheck.checking ? <span className="spinner" /> : null} Check for Updates
+                </button>
+              </div>
+              <div className="card-body">
+                <div className="settings-row">
+                  <div>
+                    <div className="settings-label">Current Version</div>
+                    <div className="settings-desc">Installed version of DevStack</div>
+                  </div>
+                  <span className="badge badge-installed">v{updateCheck.current || "0.1.0"}</span>
+                </div>
+                {updateCheck.latest && (
+                  <div className="settings-row">
+                    <div>
+                      <div className="settings-label">Latest Version</div>
+                      <div className="settings-desc">Available on GitHub releases</div>
+                    </div>
+                    <span className={`badge ${updateCheck.latest === updateCheck.current || updateCheck.latest === `v${updateCheck.current}` ? "badge-running" : "badge-stopped"}`}>
+                      {updateCheck.latest}
+                    </span>
+                  </div>
+                )}
+                {updateCheck.latest && updateCheck.latest !== updateCheck.current && updateCheck.latest !== `v${updateCheck.current}` && (
+                  <div style={{ marginTop: 12, padding: "12px 16px", borderRadius: 8, background: "var(--bg-tertiary, rgba(0,0,0,0.1))" }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Update Available</div>
+                    <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 8 }}>
+                      Download the latest version from GitHub Releases.
+                    </div>
+                    <button className="btn btn-sm btn-primary" onClick={async () => {
+                      try { await invoke("open_in_browser", { url: "https://github.com/hamza-younas94/devStack/releases/latest" }); } catch {}
+                    }}>
+                      Download Update
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">Auto-Update</div>
+              </div>
+              <div className="card-body">
+                <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                  Automatic updates are coming in a future release. For now, use the button above to check for new versions manually.
                 </div>
               </div>
             </div>

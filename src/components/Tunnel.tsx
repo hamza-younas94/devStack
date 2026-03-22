@@ -30,7 +30,11 @@ export default function Tunnel() {
   const [actionLoading, setActionLoading] = useState("");
   const [cfInstalled, setCfInstalled] = useState(false);
   const [ngInstalled, setNgInstalled] = useState(false);
+  const [frpInstalled, setFrpInstalled] = useState(false);
   const [installing, setInstalling] = useState("");
+  const [frpServer, setFrpServer] = useState("");
+  const [frpServerPort, setFrpServerPort] = useState("7000");
+  const [frpRemotePort, setFrpRemotePort] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -54,12 +58,14 @@ export default function Tunnel() {
     }
     // Check if providers are installed
     try {
-      const [cf, ng] = await Promise.all([
+      const [cf, ng, frp] = await Promise.all([
         invoke<boolean>("check_installed", { name: "cloudflared" }),
         invoke<boolean>("check_installed", { name: "ngrok" }),
+        invoke<boolean>("frp_check"),
       ]);
       setCfInstalled(cf);
       setNgInstalled(ng);
+      setFrpInstalled(frp);
     } catch { /* */ }
     setLoading(false);
   }, [toast]);
@@ -70,12 +76,22 @@ export default function Tunnel() {
     setInstalling(pkg);
     toast(`Installing ${pkg}...`, "info");
     try {
-      const result = await invoke<CmdResult>("install_package", { formula: pkg });
-      if (result.success) {
-        toast(`${pkg} installed successfully`, "success");
-        await refresh();
+      if (pkg === "frp") {
+        const result = await invoke<CmdResult>("frp_install");
+        if (result.success) {
+          toast("FRP installed successfully", "success");
+          await refresh();
+        } else {
+          toast(result.error || "Failed to install FRP", "error");
+        }
       } else {
-        toast(result.error || `Failed to install ${pkg}`, "error");
+        const result = await invoke<CmdResult>("install_package", { formula: pkg });
+        if (result.success) {
+          toast(`${pkg} installed successfully`, "success");
+          await refresh();
+        } else {
+          toast(result.error || `Failed to install ${pkg}`, "error");
+        }
       }
     } catch (e) {
       toast(`Install failed: ${e}`, "error");
@@ -148,6 +164,43 @@ export default function Tunnel() {
     setActionLoading("");
   };
 
+  const startFrpTunnel = async () => {
+    setActionLoading("start");
+    try {
+      const result = await invoke<CmdResult>("frp_start", {
+        server: frpServer,
+        serverPort: frpServerPort,
+        localPort: port,
+        remotePort: frpRemotePort,
+      });
+      if (result.success) {
+        setTunnelActive(true);
+        setActiveProvider("frp");
+        setTunnelUrl(`${frpServer}:${frpRemotePort}`);
+        toast("FRP tunnel started", "success");
+      } else {
+        toast(result.error || "Failed to start FRP tunnel", "error");
+      }
+    } catch (e) {
+      toast(`Failed: ${e}`, "error");
+    }
+    setActionLoading("");
+  };
+
+  const stopFrpTunnel = async () => {
+    setActionLoading("stop");
+    try {
+      await invoke<CmdResult>("frp_stop");
+      toast("FRP tunnel stopped", "success");
+      setTunnelActive(false);
+      setTunnelUrl("");
+      setActiveProvider("");
+    } catch {
+      toast("Failed to stop FRP tunnel", "error");
+    }
+    setActionLoading("");
+  };
+
   const handleSiteSelect = (siteName: string) => {
     setSelectedSite(siteName);
     const site = sites.find((s) => s.name === siteName);
@@ -165,7 +218,7 @@ export default function Tunnel() {
     }
   };
 
-  const providerInstalled = provider === "cloudflared" ? cfInstalled : ngInstalled;
+  const providerInstalled = provider === "cloudflared" ? cfInstalled : provider === "ngrok" ? ngInstalled : frpInstalled;
 
   return (
     <div>
@@ -193,7 +246,7 @@ export default function Tunnel() {
               </div>
               <button
                 className="btn btn-sm btn-danger"
-                onClick={stopTunnel}
+                onClick={activeProvider === "frp" ? stopFrpTunnel : stopTunnel}
                 disabled={!!actionLoading}
               >
                 {actionLoading === "stop" ? <span className="spinner" /> : null} Stop Tunnel
@@ -229,6 +282,7 @@ export default function Tunnel() {
               {[
                 { id: "cloudflared", name: "Cloudflare Tunnel", desc: "Free, fast tunnels via Cloudflare. No account required.", installed: cfInstalled },
                 { id: "ngrok", name: "ngrok", desc: "Popular tunneling service with custom domains and dashboard.", installed: ngInstalled },
+                { id: "frp", name: "FRP", desc: "Fast reverse proxy for exposing local servers behind NAT/firewall.", installed: frpInstalled },
               ].map((p) => (
                 <div
                   key={p.id}
@@ -253,7 +307,7 @@ export default function Tunnel() {
                     <button
                       className="btn btn-sm btn-primary"
                       style={{ marginTop: 8 }}
-                      onClick={(e) => { e.stopPropagation(); installProvider(p.id === "cloudflared" ? "cloudflare/cloudflare/cloudflared" : "ngrok/ngrok/ngrok"); }}
+                      onClick={(e) => { e.stopPropagation(); installProvider(p.id === "cloudflared" ? "cloudflare/cloudflare/cloudflared" : p.id === "ngrok" ? "ngrok/ngrok/ngrok" : "frp"); }}
                       disabled={!!installing}
                     >
                       {installing === p.id ? <span className="spinner" /> : null} Install {p.name}
@@ -274,11 +328,11 @@ export default function Tunnel() {
             {!providerInstalled ? (
               <div style={{ textAlign: "center", padding: 20, color: "var(--text-dim)" }}>
                 <div style={{ fontSize: 14, marginBottom: 8 }}>
-                  {provider === "cloudflared" ? "Cloudflare Tunnel" : "ngrok"} is not installed
+                  {provider === "cloudflared" ? "Cloudflare Tunnel" : provider === "ngrok" ? "ngrok" : "FRP"} is not installed
                 </div>
                 <button
                   className="btn btn-primary"
-                  onClick={() => installProvider(provider === "cloudflared" ? "cloudflare/cloudflare/cloudflared" : "ngrok/ngrok/ngrok")}
+                  onClick={() => installProvider(provider === "cloudflared" ? "cloudflare/cloudflare/cloudflared" : provider === "ngrok" ? "ngrok/ngrok/ngrok" : "frp")}
                   disabled={!!installing}
                 >
                   {installing ? <span className="spinner" /> : null} Install Now
@@ -336,12 +390,47 @@ export default function Tunnel() {
                       />
                     </div>
                   )}
+
+                  {provider === "frp" && (
+                    <>
+                      <div className="form-group">
+                        <label className="form-label">FRP Server</label>
+                        <input
+                          className="form-input"
+                          type="text"
+                          value={frpServer}
+                          onChange={(e) => setFrpServer(e.target.value)}
+                          placeholder="your-server.com"
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Server Port</label>
+                        <input
+                          className="form-input"
+                          type="text"
+                          value={frpServerPort}
+                          onChange={(e) => setFrpServerPort(e.target.value)}
+                          placeholder="7000"
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Remote Port</label>
+                        <input
+                          className="form-input"
+                          type="text"
+                          value={frpRemotePort}
+                          onChange={(e) => setFrpRemotePort(e.target.value)}
+                          placeholder="8080"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <button
                   className="btn btn-primary"
-                  onClick={startTunnel}
-                  disabled={!!actionLoading || tunnelActive || !port}
+                  onClick={provider === "frp" ? startFrpTunnel : startTunnel}
+                  disabled={!!actionLoading || tunnelActive || !port || (provider === "frp" && (!frpServer || !frpRemotePort))}
                   style={{ marginTop: 8 }}
                 >
                   {actionLoading === "start" ? <span className="spinner" /> : null} Start Tunnel
@@ -366,9 +455,13 @@ export default function Tunnel() {
             <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.8 }}>
               <div><strong style={{ color: "var(--text)" }}>Cloudflare Tunnel:</strong> Creates a secure tunnel without exposing ports. One-click install above.</div>
               <div style={{ marginTop: 6 }}><strong style={{ color: "var(--text)" }}>ngrok:</strong> Provides a public URL for your local server with dashboard.</div>
+              <div style={{ marginTop: 6 }}><strong style={{ color: "var(--text)" }}>FRP:</strong> Fast reverse proxy that forwards local ports to a remote server you control. Requires an FRP server (frps) running on a VPS.</div>
               <div style={{ marginTop: 10 }}>The tunnel forwards traffic from a public URL to your local port, making your development site accessible to anyone with the URL.</div>
               {provider === "ngrok" && (
                 <div style={{ marginTop: 6 }}><strong style={{ color: "var(--text)" }}>Dashboard:</strong> When active, ngrok dashboard is at <code>http://localhost:4040</code></div>
+              )}
+              {provider === "frp" && (
+                <div style={{ marginTop: 6 }}><strong style={{ color: "var(--text)" }}>Setup:</strong> You need an FRP server (frps) running on a remote machine. The client (frpc) connects to it and forwards your local port.</div>
               )}
             </div>
           </div>

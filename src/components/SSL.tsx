@@ -16,6 +16,13 @@ interface CmdResult {
 }
 
 type CertType = "domain" | "smime" | "code" | "document";
+type MainCategory = "local" | "acme";
+
+interface AcmeCert {
+  domain: string;
+  expiry: string;
+  cert_path: string;
+}
 
 interface TabConfig {
   key: CertType;
@@ -87,6 +94,15 @@ export default function SSL() {
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState("");
+
+  // ACME / Let's Encrypt state
+  const [mainCategory, setMainCategory] = useState<MainCategory>("local");
+  const [acmeInstalled, setAcmeInstalled] = useState<boolean | null>(null);
+  const [acmeCerts, setAcmeCerts] = useState<AcmeCert[]>([]);
+  const [acmeEmail, setAcmeEmail] = useState("");
+  const [acmeDomain, setAcmeDomain] = useState("");
+  const [acmeLoading, setAcmeLoading] = useState(false);
+  const [acmeMessage, setAcmeMessage] = useState("");
 
   const currentTab = TABS.find((t) => t.key === activeTab)!;
 
@@ -182,115 +198,413 @@ export default function SSL() {
     setFormValues((prev) => ({ ...prev, [key]: value }));
   };
 
+  // ACME helpers
+  const acmeCheckInstalled = async () => {
+    try {
+      const result = await invoke<CmdResult>("acme_check");
+      setAcmeInstalled(result.success);
+    } catch {
+      setAcmeInstalled(false);
+    }
+  };
+
+  const acmeInstallCertbot = async () => {
+    setAcmeLoading(true);
+    setAcmeMessage("");
+    try {
+      const result = await invoke<CmdResult>("acme_install");
+      if (result.success) {
+        setAcmeInstalled(true);
+        setAcmeMessage("Certbot installed successfully.");
+      } else {
+        setAcmeMessage(result.error || "Failed to install certbot.");
+      }
+    } catch (err) {
+      setAcmeMessage(String(err));
+    }
+    setAcmeLoading(false);
+  };
+
+  const acmeRefreshCerts = async () => {
+    setAcmeLoading(true);
+    try {
+      const result = await invoke<CmdResult>("acme_list_certs");
+      if (result.success && result.output) {
+        try {
+          setAcmeCerts(JSON.parse(result.output));
+        } catch {
+          setAcmeCerts([]);
+        }
+      } else {
+        setAcmeCerts([]);
+      }
+    } catch {
+      setAcmeCerts([]);
+    }
+    setAcmeLoading(false);
+  };
+
+  const acmeIssueCert = async () => {
+    const domain = acmeDomain.trim();
+    const email = acmeEmail.trim();
+    if (!domain || !email) return;
+    setAcmeLoading(true);
+    setAcmeMessage("");
+    try {
+      const result = await invoke<CmdResult>("acme_issue_cert", { domain, email });
+      if (result.success) {
+        setAcmeMessage(`Certificate issued for ${domain}.`);
+        setAcmeDomain("");
+        await acmeRefreshCerts();
+      } else {
+        setAcmeMessage(result.error || "Failed to issue certificate.");
+      }
+    } catch (err) {
+      setAcmeMessage(String(err));
+    }
+    setAcmeLoading(false);
+  };
+
+  const acmeRenewAll = async () => {
+    setAcmeLoading(true);
+    setAcmeMessage("");
+    try {
+      const result = await invoke<CmdResult>("acme_renew");
+      if (result.success) {
+        setAcmeMessage("All certificates renewed successfully.");
+        await acmeRefreshCerts();
+      } else {
+        setAcmeMessage(result.error || "Renewal failed.");
+      }
+    } catch (err) {
+      setAcmeMessage(String(err));
+    }
+    setAcmeLoading(false);
+  };
+
+  const acmeRevokeCert = async (domain: string) => {
+    if (!confirm(`Revoke Let's Encrypt certificate for "${domain}"?`)) return;
+    setAcmeLoading(true);
+    setAcmeMessage("");
+    try {
+      const result = await invoke<CmdResult>("acme_revoke_cert", { domain });
+      if (result.success) {
+        setAcmeMessage(`Certificate for ${domain} revoked.`);
+        await acmeRefreshCerts();
+      } else {
+        setAcmeMessage(result.error || "Revocation failed.");
+      }
+    } catch (err) {
+      setAcmeMessage(String(err));
+    }
+    setAcmeLoading(false);
+  };
+
+  // Check ACME status when switching to acme tab
+  useEffect(() => {
+    if (mainCategory === "acme") {
+      acmeCheckInstalled();
+      acmeRefreshCerts();
+    }
+  }, [mainCategory]);
+
   const primaryFieldFilled = (formValues["domain"] || "").trim().length > 0;
 
   return (
     <div>
       <div className="page-header">
         <h1 className="page-title">SSL Certificates</h1>
-        <div className="btn-group">
-          <button className="btn" onClick={refresh} disabled={loading}>
-            {loading ? <span className="spinner" /> : null} Refresh
-          </button>
-          <button className="btn btn-primary" onClick={openCreateModal}>
-            + {currentTab.createLabel}
-          </button>
-        </div>
+        {mainCategory === "local" && (
+          <div className="btn-group">
+            <button className="btn" onClick={refresh} disabled={loading}>
+              {loading ? <span className="spinner" /> : null} Refresh
+            </button>
+            <button className="btn btn-primary" onClick={openCreateModal}>
+              + {currentTab.createLabel}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="page-body">
-        {message && <div className="warning-banner">{message}</div>}
-
-        {/* Tabs */}
+        {/* Main category toggle: Local CA vs Let's Encrypt */}
         <div style={{ display: "flex", gap: 0, marginBottom: 16 }}>
-          {TABS.map((tab, idx) => (
-            <button
-              key={tab.key}
-              className={`btn ${activeTab === tab.key ? "btn-primary" : ""}`}
-              style={{
-                borderRadius: 0,
-                borderRight: idx < TABS.length - 1 ? "1px solid var(--border-color, #333)" : "none",
-                ...(idx === 0 ? { borderTopLeftRadius: 6, borderBottomLeftRadius: 6 } : {}),
-                ...(idx === TABS.length - 1
-                  ? { borderTopRightRadius: 6, borderBottomRightRadius: 6 }
-                  : {}),
-              }}
-              onClick={() => {
-                setActiveTab(tab.key);
-                setMessage("");
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
+          <button
+            className={`btn ${mainCategory === "local" ? "btn-primary" : ""}`}
+            style={{
+              borderRadius: 0,
+              borderTopLeftRadius: 6,
+              borderBottomLeftRadius: 6,
+              borderRight: "1px solid var(--border-color, #333)",
+            }}
+            onClick={() => { setMainCategory("local"); setMessage(""); setAcmeMessage(""); }}
+          >
+            Local CA (mkcert)
+          </button>
+          <button
+            className={`btn ${mainCategory === "acme" ? "btn-primary" : ""}`}
+            style={{
+              borderRadius: 0,
+              borderTopRightRadius: 6,
+              borderBottomRightRadius: 6,
+            }}
+            onClick={() => { setMainCategory("acme"); setMessage(""); setAcmeMessage(""); }}
+          >
+            Let's Encrypt (ACME)
+          </button>
         </div>
 
-        <div className="info-banner">{currentTab.description}</div>
+        {/* ===== Local CA (mkcert) section ===== */}
+        {mainCategory === "local" && (
+          <>
+            {message && <div className="warning-banner">{message}</div>}
 
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{currentTab.col1Header}</th>
-                <th>Certificate</th>
-                <th>Issuer</th>
-                <th>Expiry</th>
-                <th style={{ width: 80 }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredCerts.length === 0 && !loading && (
-                <tr>
-                  <td colSpan={5}>
-                    <div className="empty-state">
-                      No {currentTab.label.toLowerCase()} certificates found. Click "+ {currentTab.createLabel}" to create one.
-                    </div>
-                  </td>
-                </tr>
-              )}
-              {loading && filteredCerts.length === 0 && (
-                <tr>
-                  <td colSpan={5}>
-                    <div className="empty-state">
-                      <span className="spinner" /> Loading...
-                    </div>
-                  </td>
-                </tr>
-              )}
-              {filteredCerts.map((cert) => (
-                <tr key={cert.cert_path}>
-                  <td style={{ fontWeight: 600 }}>{cert.domain}</td>
-                  <td>
-                    <code style={{ fontSize: 12 }}>{cert.cert_path}</code>
-                  </td>
-                  <td>
-                    <code style={{ fontSize: 12 }}>{cert.issuer || "\u2014"}</code>
-                  </td>
-                  <td>
-                    <span
-                      className={`badge ${
-                        cert.expiry && new Date(cert.expiry) > new Date()
-                          ? "badge-running"
-                          : "badge-stopped"
-                      }`}
-                    >
-                      {cert.expiry || "Unknown"}
-                    </span>
-                  </td>
-                  <td>
-                    <button
-                      className="btn btn-sm btn-danger"
-                      onClick={() => handleDelete(cert.domain)}
-                      disabled={loading}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
+            {/* Tabs */}
+            <div style={{ display: "flex", gap: 0, marginBottom: 16 }}>
+              {TABS.map((tab, idx) => (
+                <button
+                  key={tab.key}
+                  className={`btn ${activeTab === tab.key ? "btn-primary" : ""}`}
+                  style={{
+                    borderRadius: 0,
+                    borderRight: idx < TABS.length - 1 ? "1px solid var(--border-color, #333)" : "none",
+                    ...(idx === 0 ? { borderTopLeftRadius: 6, borderBottomLeftRadius: 6 } : {}),
+                    ...(idx === TABS.length - 1
+                      ? { borderTopRightRadius: 6, borderBottomRightRadius: 6 }
+                      : {}),
+                  }}
+                  onClick={() => {
+                    setActiveTab(tab.key);
+                    setMessage("");
+                  }}
+                >
+                  {tab.label}
+                </button>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+
+            <div className="info-banner">{currentTab.description}</div>
+
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>{currentTab.col1Header}</th>
+                    <th>Certificate</th>
+                    <th>Issuer</th>
+                    <th>Expiry</th>
+                    <th style={{ width: 80 }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCerts.length === 0 && !loading && (
+                    <tr>
+                      <td colSpan={5}>
+                        <div className="empty-state">
+                          No {currentTab.label.toLowerCase()} certificates found. Click "+ {currentTab.createLabel}" to create one.
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {loading && filteredCerts.length === 0 && (
+                    <tr>
+                      <td colSpan={5}>
+                        <div className="empty-state">
+                          <span className="spinner" /> Loading...
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {filteredCerts.map((cert) => (
+                    <tr key={cert.cert_path}>
+                      <td style={{ fontWeight: 600 }}>{cert.domain}</td>
+                      <td>
+                        <code style={{ fontSize: 12 }}>{cert.cert_path}</code>
+                      </td>
+                      <td>
+                        <code style={{ fontSize: 12 }}>{cert.issuer || "\u2014"}</code>
+                      </td>
+                      <td>
+                        <span
+                          className={`badge ${
+                            cert.expiry && new Date(cert.expiry) > new Date()
+                              ? "badge-running"
+                              : "badge-stopped"
+                          }`}
+                        >
+                          {cert.expiry || "Unknown"}
+                        </span>
+                      </td>
+                      <td>
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={() => handleDelete(cert.domain)}
+                          disabled={loading}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {/* ===== Let's Encrypt (ACME) section ===== */}
+        {mainCategory === "acme" && (
+          <>
+            {acmeMessage && <div className="warning-banner">{acmeMessage}</div>}
+
+            <div className="info-banner">
+              Publicly-trusted TLS certificates from Let's Encrypt via Certbot. Requires a publicly accessible domain with DNS pointing to this machine.
+            </div>
+
+            {/* Certbot not installed */}
+            {acmeInstalled === false && (
+              <div className="card">
+                <div className="card-header">Certbot Not Installed</div>
+                <div className="card-body">
+                  <p style={{ marginBottom: 12 }}>
+                    Certbot is required to manage Let's Encrypt certificates. Click below to install it.
+                  </p>
+                  <button
+                    className="btn btn-primary"
+                    onClick={acmeInstallCertbot}
+                    disabled={acmeLoading}
+                  >
+                    {acmeLoading ? <span className="spinner" /> : null} Install Certbot
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Checking status */}
+            {acmeInstalled === null && (
+              <div className="card">
+                <div className="card-body">
+                  <div className="empty-state">
+                    <span className="spinner" /> Checking certbot status...
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Certbot installed — show management UI */}
+            {acmeInstalled === true && (
+              <>
+                {/* Issue new certificate form */}
+                <div className="card" style={{ marginBottom: 16 }}>
+                  <div className="card-header">Issue New Certificate</div>
+                  <div className="card-body">
+                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <label className="form-label">Domain</label>
+                        <input
+                          className="form-input"
+                          placeholder="example.com"
+                          value={acmeDomain}
+                          onChange={(e) => setAcmeDomain(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") acmeIssueCert(); }}
+                        />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <label className="form-label">Email</label>
+                        <input
+                          className="form-input"
+                          placeholder="admin@example.com"
+                          value={acmeEmail}
+                          onChange={(e) => setAcmeEmail(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") acmeIssueCert(); }}
+                        />
+                      </div>
+                      <button
+                        className="btn btn-primary"
+                        onClick={acmeIssueCert}
+                        disabled={acmeLoading || !acmeDomain.trim() || !acmeEmail.trim()}
+                      >
+                        {acmeLoading ? <span className="spinner" /> : null} Issue Certificate
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions bar */}
+                <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                  <button className="btn" onClick={acmeRefreshCerts} disabled={acmeLoading}>
+                    {acmeLoading ? <span className="spinner" /> : null} Refresh
+                  </button>
+                  <button className="btn" onClick={acmeRenewAll} disabled={acmeLoading}>
+                    {acmeLoading ? <span className="spinner" /> : null} Renew All
+                  </button>
+                </div>
+
+                {/* Certificates table */}
+                <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Domain</th>
+                        <th>Certificate Path</th>
+                        <th>Expiry</th>
+                        <th style={{ width: 80 }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {acmeCerts.length === 0 && !acmeLoading && (
+                        <tr>
+                          <td colSpan={4}>
+                            <div className="empty-state">
+                              No Let's Encrypt certificates found. Use the form above to issue one.
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      {acmeLoading && acmeCerts.length === 0 && (
+                        <tr>
+                          <td colSpan={4}>
+                            <div className="empty-state">
+                              <span className="spinner" /> Loading...
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      {acmeCerts.map((cert) => (
+                        <tr key={cert.domain}>
+                          <td style={{ fontWeight: 600 }}>{cert.domain}</td>
+                          <td>
+                            <code style={{ fontSize: 12 }}>{cert.cert_path}</code>
+                          </td>
+                          <td>
+                            <span
+                              className={`badge ${
+                                cert.expiry && new Date(cert.expiry) > new Date()
+                                  ? "badge-running"
+                                  : "badge-stopped"
+                              }`}
+                            >
+                              {cert.expiry || "Unknown"}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              className="btn btn-sm btn-danger"
+                              onClick={() => acmeRevokeCert(cert.domain)}
+                              disabled={acmeLoading}
+                            >
+                              Revoke
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </>
+        )}
       </div>
 
       {/* Create Certificate Modal */}
