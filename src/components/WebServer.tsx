@@ -1,29 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "../ToastContext";
-
-interface ServiceStatus {
-  name: string;
-  display_name: string;
-  status: string;
-  version: string;
-  pid: string;
-  brew_name: string;
-}
-
-interface DashboardData {
-  services: ServiceStatus[];
-  runtimes: ServiceStatus[];
-  site_count: number;
-  dns_ok: boolean;
-  ca_ok: boolean;
-}
-
-interface CmdResult {
-  success: boolean;
-  output: string;
-  error: string;
-}
+import { ServiceStatus, DashboardData, CmdResult } from "../types";
 
 type ServerType = "nginx" | "caddy" | "apache";
 type ViewTab = "status" | "config" | "logs";
@@ -249,9 +227,12 @@ export default function WebServer() {
     setLogs("");
     setAutoTail(false);
     setLogTab(currentServer.logTabs[0]?.id ?? "error");
+    // Reset to status tab on server switch, so no fetch needed here
   }, [selected, currentServer.logTabs]);
 
+  // Fetch data when viewTab or logTab changes (but NOT on server switch — that resets to "status")
   useEffect(() => {
+    if (viewTab === "status") return;
     if (!installed[selected]) return;
     if (viewTab === "logs") fetchLogs(logTab);
     if (viewTab === "config") loadConfig();

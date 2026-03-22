@@ -1,14 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "../ToastContext";
+import { CmdResult } from "../types";
 
 type Theme = "auto" | "light" | "dark";
-
-interface CmdResult {
-  success: boolean;
-  output: string;
-  error: string;
-}
 
 interface AppSettings {
   launch_at_login: boolean;

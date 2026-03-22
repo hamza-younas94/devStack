@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "../ToastContext";
+import { CmdResult } from "../types";
 
 interface PackageInfo {
   name: string;
@@ -8,12 +9,6 @@ interface PackageInfo {
   status: string;
   pid: number;
   category: string;
-}
-
-interface CmdResult {
-  success: boolean;
-  output: string;
-  error: string;
 }
 
 interface OutdatedPkg {

@@ -1,12 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "../ToastContext";
-
-interface CmdResult {
-  success: boolean;
-  output: string;
-  error: string;
-}
+import { CmdResult } from "../types";
 
 interface BackupEntry {
   id: string;
@@ -198,13 +193,6 @@ export default function Backup() {
         <div>
           <h1 className="page-title">Backup</h1>
         </div>
-        <button
-          className="btn btn-primary"
-          onClick={handleCreateBackup}
-          disabled={loading || selectedCount === 0}
-        >
-          {loading ? <span className="spinner" /> : null} Create Backup
-        </button>
       </div>
 
       <div className="page-body">

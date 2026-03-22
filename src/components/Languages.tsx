@@ -1,15 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "../ToastContext";
-
-interface ServiceStatus {
-  name: string;
-  display_name: string;
-  status: string;
-  version: string;
-  pid: string;
-  brew_name: string;
-}
+import { ServiceStatus, DashboardData, CmdResult } from "../types";
 
 interface VersionInfo {
   formula: string;
@@ -17,16 +9,6 @@ interface VersionInfo {
   installed: boolean;
   active: boolean;
   running: boolean;
-}
-
-interface DashboardData {
-  runtimes: ServiceStatus[];
-}
-
-interface CmdResult {
-  success: boolean;
-  output: string;
-  error: string;
 }
 
 interface LanguageEntry {
@@ -96,9 +78,7 @@ export default function Languages() {
     }
   }, []);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const refreshDashboard = useCallback(async () => {
     try {
       const [dashboard, php] = await Promise.all([
         invoke<DashboardData>("get_dashboard"),
@@ -106,24 +86,42 @@ export default function Languages() {
       ]);
       setRuntimes(dashboard.runtimes);
       setPhpVersions(php);
-
-      // Load installed and available versions for all languages in parallel
-      await Promise.all(
-        LANGUAGES.flatMap((lang) => [
-          loadInstalledVersions(lang),
-          loadAvailableVersions(lang),
-        ])
-      );
     } catch (e) {
       console.error("Languages refresh failed:", e);
       setError(String(e));
     }
-    setLoading(false);
-  }, [loadInstalledVersions, loadAvailableVersions]);
+  }, []);
 
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    await refreshDashboard();
+    const lang = LANGUAGES.find((l) => l.key === selected);
+    if (lang) {
+      await Promise.all([
+        loadInstalledVersions(lang),
+        loadAvailableVersions(lang),
+      ]);
+    }
+    setLoading(false);
+  }, [refreshDashboard, loadInstalledVersions, loadAvailableVersions, selected]);
+
+  // Initial load — dashboard data only once
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    refreshDashboard();
+  }, [refreshDashboard]);
+
+  // Load per-language data when selection changes
+  useEffect(() => {
+    const lang = LANGUAGES.find((l) => l.key === selected);
+    if (lang) {
+      setLoading(true);
+      Promise.all([
+        loadInstalledVersions(lang),
+        loadAvailableVersions(lang),
+      ]).finally(() => setLoading(false));
+    }
+  }, [selected, loadInstalledVersions, loadAvailableVersions]);
 
   const refreshSelected = useCallback(async () => {
     const lang = LANGUAGES.find((l) => l.key === selected);

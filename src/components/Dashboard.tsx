@@ -1,43 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "../ToastContext";
-
-/* ── Interfaces ──────────────────────────────────────────────── */
-
-interface ServiceStatus {
-  name: string;
-  display_name: string;
-  status: string;
-  version: string;
-  pid: string;
-  brew_name: string;
-}
-
-interface DashboardData {
-  services: ServiceStatus[];
-  runtimes: ServiceStatus[];
-  site_count: number;
-  dns_ok: boolean;
-  ca_ok: boolean;
-}
-
-interface Site {
-  name: string;
-  domain: string;
-  root: string;
-  php: string;
-  ssl: string;
-  site_type: string;
-  port: string;
-  database: string;
-  db_type: string;
-  cors_enabled: string;
-  cors_origin: string;
-  node_version: string;
-  python_version: string;
-  custom_nginx: string;
-  created: string;
-}
+import { ServiceStatus, DashboardData, Site } from "../types";
 
 interface SystemStats {
   cpu_usage: string;
@@ -228,8 +192,9 @@ export default function Dashboard() {
       dashBusy = false;
     }, 60000);
 
-    // Uptime counter — every second
+    // Uptime counter — every second, skip if tab hidden
     const uptimeInterval = setInterval(() => {
+      if (document.hidden || !alive) return;
       uptimeRef.current += 1;
       setUptime(uptimeRef.current);
     }, 1000);

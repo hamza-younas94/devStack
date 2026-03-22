@@ -1,17 +1,12 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "../ToastContext";
+import { CmdResult } from "../types";
 
 interface DnsEntry {
   domain: string;
   ip: string;
   source: string;
-}
-
-interface CmdResult {
-  success: boolean;
-  output: string;
-  error: string;
 }
 
 interface HostEntry {
@@ -21,13 +16,12 @@ interface HostEntry {
   enabled: boolean;
 }
 
-type DnsTab = "entries" | "hosts" | "tlds";
+type DnsTab = "entries" | "hosts";
 
 export default function DNS() {
   const { toast } = useToast();
   const [entries, setEntries] = useState<DnsEntry[]>([]);
   const [hostEntries, setHostEntries] = useState<HostEntry[]>([]);
-  const [tlds, setTlds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dnsmasqInstalled, setDnsmasqInstalled] = useState(true);
@@ -38,8 +32,6 @@ export default function DNS() {
   const [domain, setDomain] = useState("");
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState("");
-  const [newTld, setNewTld] = useState("");
-  const [addingTld, setAddingTld] = useState(false);
   const [hostsModified, setHostsModified] = useState(false);
 
   const refreshEntries = async () => {
@@ -59,15 +51,6 @@ export default function DNS() {
     } catch (err) {
       console.error("Failed to load hosts entries:", err);
       setMessage(String(err));
-    }
-  };
-
-  const refreshTlds = async () => {
-    try {
-      const data = await invoke<string[]>("get_custom_tlds");
-      setTlds(data);
-    } catch (err) {
-      console.error("Failed to load TLDs:", err);
     }
   };
 
@@ -110,7 +93,7 @@ export default function DNS() {
 
   const refresh = async () => {
     setLoading(true);
-    await Promise.all([refreshEntries(), refreshHosts(), refreshTlds(), checkDnsmasq()]);
+    await Promise.all([refreshEntries(), refreshHosts(), checkDnsmasq()]);
     setLoading(false);
   };
 
@@ -208,27 +191,6 @@ export default function DNS() {
     setSaving(false);
   };
 
-  // --- Custom TLDs ---
-
-  const handleAddTld = async () => {
-    const tld = newTld.trim().replace(/^\./, "");
-    if (!tld) return;
-    setAddingTld(true);
-    setMessage("");
-    try {
-      const result = await invoke<CmdResult>("add_custom_tld", { tld });
-      if (result.success) {
-        setNewTld("");
-        await refreshTlds();
-      } else {
-        setMessage(result.error || "Failed to add TLD");
-      }
-    } catch (err) {
-      setMessage(String(err));
-    }
-    setAddingTld(false);
-  };
-
   return (
     <div>
       <div className="page-header">
@@ -299,12 +261,6 @@ export default function DNS() {
                 onClick={() => setActiveTab("hosts")}
               >
                 Hosts File Editor
-              </button>
-              <button
-                className={`tab ${activeTab === "tlds" ? "active" : ""}`}
-                onClick={() => setActiveTab("tlds")}
-              >
-                Custom TLDs
               </button>
             </div>
           </div>
@@ -461,65 +417,6 @@ export default function DNS() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-            )}
-
-            {/* ===== Custom TLDs Tab ===== */}
-            {activeTab === "tlds" && (
-              <div style={{ padding: 16 }}>
-                <div className="info-banner" style={{ marginBottom: 16 }}>
-                  Custom TLDs configure dnsmasq to resolve all <code>*.tld</code> domains to{" "}
-                  <code>127.0.0.1</code>. For example, adding <code>dev</code> means any domain
-                  like <code>myapp.dev</code> will automatically resolve locally without needing
-                  a hosts file entry. Common TLDs: <code>.test</code>, <code>.local</code>,{" "}
-                  <code>.dev</code>, <code>.localhost</code>.
-                </div>
-
-                <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-                  <input
-                    className="form-input"
-                    placeholder="e.g. dev"
-                    value={newTld}
-                    onChange={(e) => setNewTld(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleAddTld();
-                    }}
-                    style={{ flex: 1, maxWidth: 260 }}
-                  />
-                  <button
-                    className="btn btn-primary"
-                    onClick={handleAddTld}
-                    disabled={addingTld || !newTld.trim()}
-                  >
-                    {addingTld ? <span className="spinner" /> : null} Add TLD
-                  </button>
-                </div>
-
-                {tlds.length === 0 && !loading ? (
-                  <div className="empty-state">No custom TLDs configured</div>
-                ) : (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {tlds.map((tld) => (
-                      <div
-                        key={tld}
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 6,
-                          padding: "6px 12px",
-                          background: "var(--bg-secondary)",
-                          borderRadius: 6,
-                          border: "1px solid var(--border)",
-                          fontSize: 13,
-                          fontFamily: "var(--font-mono)",
-                        }}
-                      >
-                        <span style={{ color: "var(--text-secondary)" }}>*.</span>
-                        {tld}
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             )}
           </div>

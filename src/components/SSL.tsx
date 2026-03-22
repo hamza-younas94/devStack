@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { CmdResult } from "../types";
 
 interface SslCert {
   domain: string;
@@ -7,12 +8,6 @@ interface SslCert {
   key_path: string;
   issuer: string;
   expiry: string;
-}
-
-interface CmdResult {
-  success: boolean;
-  output: string;
-  error: string;
 }
 
 type CertType = "domain" | "smime" | "code" | "document";

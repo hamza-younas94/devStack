@@ -1,12 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "../ToastContext";
-
-interface CmdResult {
-  success: boolean;
-  output: string;
-  error: string;
-}
+import { CmdResult } from "../types";
 
 interface PackageInfo {
   name: string;

@@ -1,26 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "../ToastContext";
-
-interface ServiceStatus {
-  name: string;
-  status: string;
-  version: string;
-}
-
-interface DashboardData {
-  services: ServiceStatus[];
-  runtimes: ServiceStatus[];
-  site_count: number;
-  dns_ok: boolean;
-  ca_ok: boolean;
-}
-
-interface CmdResult {
-  success: boolean;
-  output: string;
-  error: string;
-}
+import { ServiceStatus, DashboardData, CmdResult } from "../types";
 
 interface OllamaModel {
   name: string;

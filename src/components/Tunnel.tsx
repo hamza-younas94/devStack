@@ -1,19 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "../ToastContext";
-
-interface CmdResult {
-  success: boolean;
-  output: string;
-  error: string;
-}
-
-interface Site {
-  name: string;
-  domain: string;
-  port: string;
-  ssl: string;
-}
+import { CmdResult, Site } from "../types";
 
 export default function Tunnel() {
   const { toast } = useToast();
@@ -35,6 +23,7 @@ export default function Tunnel() {
   const [frpServer, setFrpServer] = useState("");
   const [frpServerPort, setFrpServerPort] = useState("7000");
   const [frpRemotePort, setFrpRemotePort] = useState("");
+  const pollAbortRef = useRef(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -70,7 +59,10 @@ export default function Tunnel() {
     setLoading(false);
   }, [toast]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+    return () => { pollAbortRef.current = true; };
+  }, [refresh]);
 
   const installProvider = async (pkg: string) => {
     setInstalling(pkg);
@@ -100,8 +92,11 @@ export default function Tunnel() {
   };
 
   const pollForUrl = useCallback(async (prov: string) => {
+    pollAbortRef.current = false;
     for (let i = 0; i < 20; i++) {
+      if (pollAbortRef.current) return;
       await new Promise((r) => setTimeout(r, 1500));
+      if (pollAbortRef.current) return;
       try {
         const status = await invoke<CmdResult>("get_tunnel_status");
         if (!status.success) {
@@ -121,9 +116,11 @@ export default function Tunnel() {
         }
       } catch { break; }
     }
-    toast("Tunnel started but URL not detected yet. Try Refresh.", "info");
-    setActionLoading("");
-    refresh();
+    if (!pollAbortRef.current) {
+      toast("Tunnel started but URL not detected yet. Try Refresh.", "info");
+      setActionLoading("");
+      refresh();
+    }
   }, [toast, refresh]);
 
   const startTunnel = async () => {

@@ -1,12 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "../ToastContext";
-
-interface CmdResult {
-  success: boolean;
-  output: string;
-  error: string;
-}
+import { CmdResult } from "../types";
 
 interface DevTool {
   name: string;
@@ -22,22 +17,13 @@ interface PhpExtension {
   version: string;
 }
 
-interface DbGuiStatus {
-  name: string;
-  installed: boolean;
-  running: boolean;
-  url: string;
-  port: number;
-}
-
-type Tab = "tools" | "php-extensions" | "db-gui";
+type Tab = "tools" | "php-extensions";
 
 export default function DevTools() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<Tab>("tools");
   const [tools, setTools] = useState<DevTool[]>([]);
   const [extensions, setExtensions] = useState<PhpExtension[]>([]);
-  const [dbGui, setDbGui] = useState<DbGuiStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState("");
   const [extFilter, setExtFilter] = useState("");
@@ -64,21 +50,9 @@ export default function DevTools() {
     setLoading(false);
   }, []);
 
-  const fetchDbGui = useCallback(async () => {
-    setLoading(true);
-    try {
-      const result = await invoke<DbGuiStatus[]>("get_db_gui_status");
-      setDbGui(result);
-    } catch (e) {
-      toast(String(e), "error");
-    }
-    setLoading(false);
-  }, []);
-
   useEffect(() => {
     if (activeTab === "tools") fetchTools();
     else if (activeTab === "php-extensions") fetchExtensions();
-    else if (activeTab === "db-gui") fetchDbGui();
   }, [activeTab]);
 
   const handleInstallTool = async (name: string) => {
@@ -116,54 +90,6 @@ export default function DevTools() {
     setActionLoading("");
   };
 
-  const handleInstallDbGui = async (tool: string) => {
-    setActionLoading(`install-gui-${tool}`);
-    try {
-      const result = await invoke<CmdResult>("install_db_gui", { tool });
-      if (result.success) {
-        toast(`${tool} installed`, "success");
-        await fetchDbGui();
-      } else {
-        toast(result.error || `Failed to install ${tool}`, "error");
-      }
-    } catch (e) {
-      toast(String(e), "error");
-    }
-    setActionLoading("");
-  };
-
-  const handleStartDbGui = async (tool: string, port: number) => {
-    setActionLoading(`start-gui-${tool}`);
-    try {
-      await invoke<CmdResult>("start_db_gui", { tool: tool.toLowerCase(), port });
-      toast(`${tool} started on port ${port}`, "success");
-      setTimeout(() => fetchDbGui(), 1000);
-    } catch (e) {
-      toast(String(e), "error");
-    }
-    setActionLoading("");
-  };
-
-  const handleStopDbGui = async (port: number) => {
-    setActionLoading(`stop-gui-${port}`);
-    try {
-      await invoke<CmdResult>("stop_db_gui", { port });
-      toast("Stopped", "success");
-      setTimeout(() => fetchDbGui(), 500);
-    } catch (e) {
-      toast(String(e), "error");
-    }
-    setActionLoading("");
-  };
-
-  const handleOpenDbGui = async (url: string) => {
-    try {
-      await invoke("open_in_browser", { url });
-    } catch (e) {
-      toast(String(e), "error");
-    }
-  };
-
   // Group tools by category
   const categories = tools.reduce<Record<string, DevTool[]>>((acc, tool) => {
     if (!acc[tool.category]) acc[tool.category] = [];
@@ -183,7 +109,6 @@ export default function DevTools() {
           [
             { id: "tools", label: "Package Managers & Tools" },
             { id: "php-extensions", label: "PHP Extensions" },
-            { id: "db-gui", label: "Database GUI" },
           ] as { id: Tab; label: string }[]
         ).map((tab) => (
           <button
@@ -319,120 +244,6 @@ export default function DevTools() {
                 )}
               </tbody>
             </table>
-          </div>
-        </>
-      )}
-
-      {/* Database GUI Tab */}
-      {activeTab === "db-gui" && (
-        <>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
-            <button className="btn btn-sm" onClick={fetchDbGui} disabled={loading}>
-              {loading ? <span className="spinner" /> : null} Refresh
-            </button>
-          </div>
-
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">Database Management Tools</span>
-            </div>
-            <div className="card-body">
-              <div className="svc-grid">
-                {dbGui.map((tool) => (
-                  <div className="svc-card" key={tool.name}>
-                    <div className="svc-card-name">{tool.name}</div>
-                    <div className="svc-card-version" style={{ fontSize: 11 }}>
-                      Port {tool.port} &middot; {tool.url}
-                    </div>
-                    <div className="svc-card-status">
-                      <span
-                        className={`badge ${
-                          !tool.installed
-                            ? "badge-stopped"
-                            : tool.running
-                            ? "badge-running"
-                            : "badge-stopped"
-                        }`}
-                      >
-                        {!tool.installed
-                          ? "Not Installed"
-                          : tool.running
-                          ? "Running"
-                          : "Stopped"}
-                      </span>
-                    </div>
-                    <div className="btn-group" style={{ marginTop: 8 }}>
-                      {!tool.installed ? (
-                        <button
-                          className="btn btn-xs btn-primary"
-                          onClick={() =>
-                            handleInstallDbGui(tool.name.toLowerCase().replace(/\s/g, ""))
-                          }
-                          disabled={
-                            actionLoading ===
-                            `install-gui-${tool.name.toLowerCase().replace(/\s/g, "")}`
-                          }
-                        >
-                          {actionLoading ===
-                          `install-gui-${tool.name.toLowerCase().replace(/\s/g, "")}` ? (
-                            <span className="spinner" />
-                          ) : (
-                            "Install"
-                          )}
-                        </button>
-                      ) : tool.running ? (
-                        <>
-                          <button
-                            className="btn btn-xs btn-primary"
-                            onClick={() => handleOpenDbGui(tool.url)}
-                          >
-                            Open
-                          </button>
-                          <button
-                            className="btn btn-xs btn-danger"
-                            onClick={() => handleStopDbGui(tool.port)}
-                            disabled={actionLoading === `stop-gui-${tool.port}`}
-                          >
-                            {actionLoading === `stop-gui-${tool.port}` ? (
-                              <span className="spinner" />
-                            ) : (
-                              "Stop"
-                            )}
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          className="btn btn-xs btn-success"
-                          onClick={() =>
-                            handleStartDbGui(tool.name.toLowerCase().replace(/\s/g, ""), tool.port)
-                          }
-                          disabled={actionLoading === `start-gui-${tool.name}`}
-                        >
-                          {actionLoading === `start-gui-${tool.name}` ? (
-                            <span className="spinner" />
-                          ) : (
-                            "Start"
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">About</span>
-            </div>
-            <div className="card-body">
-              <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0 }}>
-                phpMyAdmin and Adminer run as lightweight PHP built-in servers. They connect to your
-                local MySQL/MariaDB/PostgreSQL instances. Start a tool, then click Open to access it
-                in your browser.
-              </p>
-            </div>
           </div>
         </>
       )}

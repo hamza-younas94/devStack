@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { CmdResult } from "./types";
 import Dashboard from "./components/Dashboard";
 import Websites from "./components/Websites";
 import DNS from "./components/DNS";
@@ -38,12 +39,6 @@ interface NavItem {
 interface NavGroup {
   section: string;
   items: NavItem[];
-}
-
-interface CmdResult {
-  success: boolean;
-  output: string;
-  error: string;
 }
 
 const nav: NavGroup[] = [
@@ -284,9 +279,10 @@ export default function App() {
       }
       busy = false;
     };
-    fetchStatus();
+    // Defer initial check so it doesn't block first render / navigation
+    const timeout = setTimeout(fetchStatus, 2000);
     const interval = setInterval(fetchStatus, 60000);
-    return () => clearInterval(interval);
+    return () => { clearTimeout(timeout); clearInterval(interval); };
   }, []);
 
   const allRunning = runningCount > 0 && runningCount === totalCount;

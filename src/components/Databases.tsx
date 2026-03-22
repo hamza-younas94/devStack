@@ -1,11 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-
-interface CmdResult {
-  success: boolean;
-  output: string;
-  error: string;
-}
+import { CmdResult } from "../types";
 
 interface VersionInfo {
   formula: string;
@@ -350,16 +345,13 @@ export default function Databases() {
     if (engine.supportsDbList) {
       listDbs(engine);
     }
-    if (activeTab === "configuration") {
-      loadConfigFile(engine);
-    }
-  }, [selected]);
+  }, [selected, engine, fetchInstalledVersions, fetchAvailableVersions, listDbs]);
 
   useEffect(() => {
     if (activeTab === "configuration" && !configContent && !configLoading) {
       loadConfigFile(engine);
     }
-  }, [activeTab]);
+  }, [activeTab, configContent, configLoading, engine, loadConfigFile]);
 
   const handleStartVersion = async (formula: string) => {
     setActionLoading(`start-${formula}`);
@@ -913,79 +905,37 @@ export default function Databases() {
   );
 
   const renderToolsTab = () => (
-    <>
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">GUI Tools for {engine.name}</span>
-        </div>
-        <div className="card-body">
-          {relevantTools.length === 0 ? (
-            <div className="empty-state">
-              No GUI tools available for {engine.name}.
-            </div>
-          ) : (
-            <div className="svc-grid">
-              {relevantTools.map((tool) => (
-                <div className="svc-card" key={tool.name}>
-                  <div className="svc-card-name">{tool.name}</div>
-                  <div className="svc-card-version" style={{ fontSize: 11, opacity: 0.7 }}>
-                    {tool.description}
-                  </div>
-                  <div style={{ marginTop: 4, fontSize: 11, opacity: 0.6 }}>{tool.url}</div>
-                  <button
-                    className="btn btn-xs btn-primary"
-                    style={{ marginTop: 8 }}
-                    onClick={() => openGuiTool(tool.url)}
-                  >
-                    Open in Browser
-                  </button>
+    <div className="card">
+      <div className="card-header">
+        <span className="card-title">GUI Tools for {engine.name}</span>
+      </div>
+      <div className="card-body">
+        {relevantTools.length === 0 ? (
+          <div className="empty-state">
+            No GUI tools available for {engine.name}.
+          </div>
+        ) : (
+          <div className="svc-grid">
+            {relevantTools.map((tool) => (
+              <div className="svc-card" key={tool.name}>
+                <div className="svc-card-name">{tool.name}</div>
+                <div className="svc-card-version" style={{ fontSize: 11, opacity: 0.7 }}>
+                  {tool.description}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+                <div style={{ marginTop: 4, fontSize: 11, opacity: 0.6 }}>{tool.url}</div>
+                <button
+                  className="btn btn-xs btn-primary"
+                  style={{ marginTop: 8 }}
+                  onClick={() => openGuiTool(tool.url)}
+                >
+                  Open in Browser
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-
-      {/* All Tools overview */}
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">All Database Tools</span>
-        </div>
-        <div className="card-body">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Tool</th>
-                <th>URL</th>
-                <th>Engines</th>
-                <th style={{ width: 100 }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {guiTools.map((tool) => (
-                <tr key={tool.name}>
-                  <td style={{ fontWeight: 500 }}>{tool.name}</td>
-                  <td style={{ fontSize: 12 }}>{tool.url}</td>
-                  <td style={{ fontSize: 12 }}>
-                    {tool.engines
-                      .map((eid) => engines.find((e) => e.id === eid)?.name || eid)
-                      .join(", ")}
-                  </td>
-                  <td>
-                    <button
-                      className="btn btn-xs btn-primary"
-                      onClick={() => openGuiTool(tool.url)}
-                    >
-                      Open
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </>
+    </div>
   );
 
   return (

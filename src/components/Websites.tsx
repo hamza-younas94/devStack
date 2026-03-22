@@ -1,30 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "../ToastContext";
-
-interface Site {
-  name: string;
-  domain: string;
-  root: string;
-  php: string;
-  ssl: string;
-  site_type: string;
-  port: string;
-  database: string;
-  db_type: string;
-  cors_enabled: string;
-  cors_origin: string;
-  node_version: string;
-  python_version: string;
-  custom_nginx: string;
-  created: string;
-}
-
-interface CmdResult {
-  success: boolean;
-  output: string;
-  error: string;
-}
+import { Site, CmdResult } from "../types";
 
 interface RedirectRule {
   from: string;
